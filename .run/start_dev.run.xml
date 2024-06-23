@@ -1,0 +1,29 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="start:dev" type="js.build_tools.npm" nameIsGenerated="true">
+    <package-json value="$PROJECT_DIR$/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="start:dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <envs>
+      <env name="DB_DATABASE" value="" />
+      <env name="DB_HOST" value="" />
+      <env name="DB_PASSWORD" value="" />
+      <env name="DB_PORT" value="" />
+      <env name="DB_USERNAME" value="" />
+      <env name="DELETED_FILES_PATH" value="" />
+      <env name="FILES_PATH" value="" />
+      <env name="JWT_ISSUER" value="" />
+      <env name="JWT_SECRET" value="" />
+      <env name="LOGS_PATH" value="" />
+      <env name="MAIL_PASS" value="" />
+      <env name="MAIL_USER" value="" />
+      <env name="PRODUCTION" value="" />
+      <env name="SSL_CERT" value="" />
+      <env name="SSL_KEY" value="" />
+      <env name="TEMPORARY_FILES_PATH" value="" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>

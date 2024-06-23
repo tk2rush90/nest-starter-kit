@@ -1,0 +1,4 @@
+export const BAD_REQUEST = 'BAD_REQUEST';
+export const UNEXPECTED_ERROR = 'UNEXPECTED_ERROR';
+export const INVALID_FILE_TYPE = 'INVALID_FILE_TYPE';
+export const FILE_TOO_LARGE = 'FILE_TOO_LARGE';

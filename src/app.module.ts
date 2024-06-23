@@ -11,6 +11,7 @@ import 'winston-daily-rotate-file';
 import { File } from './entities/file';
 import { Account } from './entities/account';
 import { SignedAccount } from './entities/signed-account';
+import { AuthApiModule } from './modules/auth-api/auth-api.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { SignedAccount } from './entities/signed-account';
         }),
       ],
     }),
+    AuthApiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -25,6 +25,7 @@ import { ProfileDto } from '../../dtos/profile-dto';
 import { AccountDto } from '../../dtos/account-dto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { Request } from 'express';
+import { SignedAccountService } from '../../services/signed-account/signed-account.service';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
@@ -34,8 +35,9 @@ export class AuthApiController {
   constructor(
     private readonly _entityManager: EntityManager,
     private readonly _mailService: MailService,
-    private readonly _accountService: AccountService,
     private readonly _cryptoService: CryptoService,
+    private readonly _accountService: AccountService,
+    private readonly _signedAccountService: SignedAccountService,
   ) {}
 
   /**
@@ -154,7 +156,7 @@ export class AuthApiController {
       await this._accountService.validateOtp(account, signInDto.otp, _entityManager);
 
       // Mark `Account` as signed.
-      const accessToken = await this._accountService.markAccountAsSigned(account, _entityManager);
+      const accessToken = await this._signedAccountService.markAccountAsSigned(account, _entityManager);
 
       // Convert and return.
       return this._accountService.toProfileDto(account, accessToken);

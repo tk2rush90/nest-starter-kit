@@ -68,6 +68,14 @@ export class Account {
   })
   createdAt: Date | string;
 
+  /** Expiry date of account */
+  @Column({
+    name: 'account_expired_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  accountExpiredAt: Date | string | null;
+
   /** Relation to signed histories */
   @OneToMany(() => SignedAccount, (entity) => entity.account, {
     cascade: true,

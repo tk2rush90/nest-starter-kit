@@ -8,6 +8,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { utilities, WinstonModule } from 'nest-winston';
 import { format, transports } from 'winston';
 import 'winston-daily-rotate-file';
+import { File } from './entities/file';
+import { Account } from './entities/account';
+import { SignedAccount } from './entities/signed-account';
 
 @Module({
   imports: [
@@ -22,7 +25,7 @@ import 'winston-daily-rotate-file';
       database: configs.db.database,
       username: configs.db.username,
       password: configs.db.password,
-      entities: [],
+      entities: [File, Account, SignedAccount],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       migrationsRun: true,
       synchronize: !configs.etc.production,

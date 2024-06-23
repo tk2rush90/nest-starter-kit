@@ -10,6 +10,10 @@ export const configs = {
     deletedFiles: process.env.DELETED_FILES_PATH || '', // Path to deleted files.
     emailTemplates: join(__dirname, '..', 'email-templates'), // Path to email templates.
   },
+  // Url prefix configurations.
+  urls: {
+    assets: 'http://localhost:3000/assets',
+  },
   // Database configuration.
   db: {
     host: process.env.DB_HOST || 'localhost',

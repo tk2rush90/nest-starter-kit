@@ -1,5 +1,5 @@
 import { EntityManager, EntityTarget, ObjectLiteral, Repository, SelectQueryBuilder, ValueTransformer } from 'typeorm';
-import { PagingResultDto } from '../dto/paging-result-dto';
+import { PagingResultDto } from '../dtos/paging-result-dto';
 import { OrderDirection } from '../types/order-direction';
 import { Logger } from '@nestjs/common';
 

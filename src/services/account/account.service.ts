@@ -1,5 +1,4 @@
 import {
-  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,23 +10,21 @@ import { Account } from '../../entities/account';
 import { EntityManager, Repository } from 'typeorm';
 import { getRepository } from '../../utils/typeorm';
 import { CryptoService } from '../crypto/crypto.service';
-import { SignedAccount } from '../../entities/signed-account';
 import { MINUTE, YEAR } from '../../constants/milliseconds';
 import {
   ACCOUNT_NOT_FOUND,
-  EXPIRED_DELETE_CODE,
   EXPIRED_OTP,
-  INVALID_DELETE_CODE,
   INVALID_OTP,
   OTP_NOT_FOUND,
   SIGN_REQUIRED,
   UNEXPECTED_ERROR,
 } from '../../constants/errors';
 import { JwtService } from '../jwt/jwt.service';
-import { PayloadDto } from '../../dto/payload-dto';
-import { FileService } from '../file/file.service';
-import { AccountDto } from '../../dto/account-dto';
-import { ProfileDto } from '../../dto/profile-dto';
+import { AccountDto } from '../../dtos/account-dto';
+import { ProfileDto } from '../../dtos/profile-dto';
+import { File } from '../../entities/file';
+import { configs } from '../../configs/configs';
+import { SignedAccountService } from '../signed-account/signed-account.service';
 
 /** A service that contains database related features for `Account` */
 @Injectable()
@@ -36,10 +33,9 @@ export class AccountService {
 
   constructor(
     @InjectRepository(Account) private readonly _accountRepository: Repository<Account>,
-    @InjectRepository(SignedAccount) private readonly _signedAccountRepository: Repository<SignedAccount>,
     private readonly _jwtService: JwtService,
-    private readonly _fileService: FileService,
     private readonly _cryptoService: CryptoService,
+    private readonly _signedAccountService: SignedAccountService,
   ) {}
 
   /**
@@ -179,7 +175,7 @@ export class AccountService {
       email,
       nickname,
       salt,
-      expiredAt: new Date(Date.now() + YEAR),
+      accountExpiredAt: new Date(Date.now() + YEAR),
     });
 
     // Save account.
@@ -291,79 +287,44 @@ export class AccountService {
       });
   }
 
-  /**
-   * Replace avatar of `Account`.
-   * When there isn't `avatar` and `removeAvatar` is `true`,
-   * it just removes existing avatar.
-   * @param account - `Account` to replace avatar.
-   * @param removeAvatar - Flag to remove existing avatar.
-   * @param avatar - Uploaded new avatar file.
-   * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns uploaded avatar filename.
-   */
-  async replaceAvatar(
-    account: Account,
-    removeAvatar: boolean,
-    avatar?: Express.Multer.File,
-    entityManager?: EntityManager,
-  ): Promise<string | undefined> {
-    // Get target repository.
+  /** Remove existing avatar url */
+  async removeAvatarUrl(account: Account, entityManager?: EntityManager): Promise<void> {
     const accountRepository = getRepository(Account, this._accountRepository, entityManager);
 
-    // When previous avatar exists and `removeAvatar` flag is `true`, remove it.
-    if (removeAvatar && account.avatarFilename) {
-      // Remove actual file to trash.
-      this._fileService.remove(account.avatarFilename);
+    await accountRepository
+      .update(
+        {
+          id: account.id,
+        },
+        {
+          avatarUrl: null,
+        },
+      )
+      .catch((e) => {
+        this._logger.error('Failed to remove avatar url: ' + e.toString(), e.stack);
 
-      // Mark avatar as removed.
-      await accountRepository
-        .update(
-          {
-            id: account.id,
-          },
-          {
-            avatarFilename: null,
-            avatarMimetype: null,
-          },
-        )
-        .catch((e) => {
-          this._logger.error('Failed to remove account avatar: ' + e.toString(), e.stack);
+        throw new InternalServerErrorException(UNEXPECTED_ERROR);
+      });
+  }
 
-          throw new InternalServerErrorException(UNEXPECTED_ERROR);
-        });
-    }
+  /** Update avatar url by file */
+  async updateAvatarUrl(account: Account, file: File, entityManager?: EntityManager): Promise<void> {
+    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
 
-    // When uploaded avatar exists, save file and update account.
-    if (avatar) {
-      // Create random filename for avatar.
-      const filename = this._fileService.createRandomFilename(avatar);
+    await accountRepository
+      .update(
+        {
+          id: account.id,
+        },
+        {
+          avatarUrl: configs.urls.assets + `/${file.id}.${file.extension}`,
+        },
+      )
+      .catch((e) => {
+        this._logger.error('Failed to update avatar url: ' + e.toString(), e.stack);
 
-      // Resize image buffer.
-      const resizedBuffer = await this._fileService.resizeImageBuffer(avatar.buffer, 96);
-
-      // Save file.
-      this._fileService.save(filename, resizedBuffer);
-
-      // Update account.
-      await accountRepository
-        .update(
-          {
-            id: account.id,
-          },
-          {
-            avatarFilename: filename,
-            avatarMimetype: avatar.mimetype,
-          },
-        )
-        .catch((e) => {
-          this._logger.error('Failed to update account avatar: ' + e.toString(), e.stack);
-
-          throw new InternalServerErrorException(UNEXPECTED_ERROR);
-        });
-
-      // Return saved filename.
-      return filename;
-    }
+        throw new InternalServerErrorException(UNEXPECTED_ERROR);
+      });
   }
 
   /**
@@ -388,69 +349,6 @@ export class AccountService {
       )
       .catch((e) => {
         this._logger.error('Failed to update account nickname: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
-  }
-
-  /**
-   * Create `SignedAccount` to mark `Account` as signed.
-   * It creates new access token for `Account`.
-   * @param account - `Account` to mark as signed.
-   * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns created access token.
-   */
-  async markAccountAsSigned(account: Account, entityManager: EntityManager): Promise<string> {
-    // Get repository.
-    const signedAccountRepository = getRepository(SignedAccount, this._signedAccountRepository, entityManager);
-
-    // Sign new access token.
-    const accessToken = await this._jwtService.sign(
-      new PayloadDto({
-        id: account.id,
-        email: account.email,
-      }),
-    );
-
-    // Encrypt signed token with `salt`.
-    const encryptedAccessToken = this._cryptoService.encrypt(accessToken, account.salt);
-
-    // Create `SignedAccount`.
-    const signedAccount = signedAccountRepository.create({
-      accessToken: encryptedAccessToken,
-      accountId: account.id,
-      expiredAt: new Date(Date.now() + YEAR), // Expired after 1 year.
-    });
-
-    // Save `SignedAccount`.
-    await signedAccountRepository.save(signedAccount).catch((e) => {
-      this._logger.error('Failed to save signed account: ' + e.toString(), e.stack);
-
-      throw new InternalServerErrorException(UNEXPECTED_ERROR);
-    });
-
-    // Returns.
-    return accessToken;
-  }
-
-  /**
-   * Mark account as unsigned.
-   * It removes `SignedAccount` matched with `account` and `accessToken`.
-   * @param account - `Account` to mark as unsigned.
-   * @param accessToken - Access token to find `SignedAccount`.
-   */
-  async markAccountAsUnsigned(account: Account, accessToken: string): Promise<void> {
-    // Encrypt signed token with `salt`.
-    const encryptedAccessToken = this._cryptoService.encrypt(accessToken, account.salt);
-
-    // Delete `SignedAccount`.
-    await this._signedAccountRepository
-      .delete({
-        id: account.id,
-        accessToken: encryptedAccessToken,
-      })
-      .catch((e) => {
-        this._logger.error('Failed to delete signed account: ' + e.toString(), e.stack);
 
         throw new InternalServerErrorException(UNEXPECTED_ERROR);
       });
@@ -482,101 +380,13 @@ export class AccountService {
     const encryptedAccessToken = this._cryptoService.encrypt(accessToken, account.salt);
 
     // Find `SignedAccount`
-    const signedAccount = await this._signedAccountRepository
-      .findOne({
-        where: {
-          accountId: account.id,
-          accessToken: encryptedAccessToken,
-        },
-      })
-      .catch((e) => {
-        this._logger.error('Failed to find SignedAccount account: ' + e.toString(), e.stack);
+    const signedAccount = await this._signedAccountService.getSignedAccount(account, encryptedAccessToken);
 
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
-
-    // When `SignedAccount` not found, throw exception.
-    if (!signedAccount) {
-      throw new UnauthorizedException(SIGN_REQUIRED);
-    }
-
-    // Update expiry date of `SignedAccount`.
-    await this._signedAccountRepository
-      .update(
-        {
-          id: signedAccount.id,
-        },
-        {
-          expiredAt: new Date(Date.now() + YEAR), // Expired after 1 year.
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to update expiry date: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    // Update expiry date.
+    await this._signedAccountService.updateExpiryDate(signedAccount);
 
     // Return account.
     return account;
-  }
-
-  /**
-   * Mark `account` as deletable.
-   * It sets `deleteCode` and `deleteExpiredAt` and return raw delete code.
-   * @param account - Account to mark as deletable.
-   * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns raw delete code.
-   */
-  async markAsDeletable(account: Account, entityManager?: EntityManager): Promise<string> {
-    // Get target repository.
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
-
-    // Create random delete code.
-    const deleteCode = this._cryptoService.createUUID();
-
-    // Update account.
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          deleteCode: this._cryptoService.encrypt(deleteCode, account.salt),
-          deleteExpiresAt: new Date(Date.now() + MINUTE * 5),
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to mark account as deletable: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
-
-    // Return raw code.
-    return deleteCode;
-  }
-
-  /**
-   * Check provided `deleteCode` of `account`.
-   * It throws proper exception on check failed.
-   * @param account - Account to check code.
-   * @param deleteCode - Raw delete code to check.
-   */
-  checkAccountDeleteCode(account: Account, deleteCode: string): void {
-    // Check expiry date.
-    if (!account.deleteExpiresAt || new Date(account.deleteExpiresAt) < new Date()) {
-      throw new ForbiddenException(EXPIRED_DELETE_CODE);
-    }
-
-    // Encrypt delete code.
-    const encryptedDeleteCode = this._cryptoService.encrypt(deleteCode, account.salt);
-
-    this._logger.log('Encrypted delete code: ' + encryptedDeleteCode);
-    this._logger.log('Saved delete code: ' + account.deleteCode);
-
-    // Check `deleteCode`.
-    if (account.deleteCode !== encryptedDeleteCode) {
-      throw new ForbiddenException(INVALID_DELETE_CODE);
-    }
   }
 
   /**
@@ -605,9 +415,7 @@ export class AccountService {
   toAccountDto(account: Account): AccountDto {
     return new AccountDto({
       id: account.id,
-      email: account.email,
       nickname: account.nickname,
-      expiredAt: account.expiredAt ? new Date(account.expiredAt) : null,
     });
   }
 
@@ -621,11 +429,7 @@ export class AccountService {
     // Create `ProfileDto` and return.
     return new ProfileDto({
       id: account.id,
-      email: account.email,
       nickname: account.nickname,
-      isAuthor: account.isAuthor,
-      isManager: account.isManager,
-      avatarFilename: account.avatarFilename,
       accessToken,
     });
   }

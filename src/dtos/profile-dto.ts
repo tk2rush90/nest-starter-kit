@@ -1,5 +1,4 @@
-import { IsBoolean, IsEmail, IsNotEmpty, IsString } from 'class-validator';
-import { IsNullable } from '../decorators/is-nullable';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 /** A DTO for account profile */
 export class ProfileDto {
@@ -8,28 +7,10 @@ export class ProfileDto {
   @IsNotEmpty()
   id: string;
 
-  /** Account email */
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
   /** Account nickname */
   @IsString()
   @IsNotEmpty()
   nickname: string;
-
-  /** Status of author or not*/
-  @IsBoolean()
-  isAuthor: boolean;
-
-  /** Status of manager or not */
-  @IsBoolean()
-  isManager: boolean;
-
-  /** Uploaded filename for account avatar */
-  @IsString()
-  @IsNullable()
-  avatarFilename: string | null;
 
   /** Access token */
   @IsString()

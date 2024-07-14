@@ -1,21 +1,277 @@
-import { EntityManager, EntityTarget, ObjectLiteral, Repository, SelectQueryBuilder, ValueTransformer } from 'typeorm';
+import { DeepPartial, EntityManager, FindOneOptions, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { PagingResultDto } from '../dtos/paging-result-dto';
 import { OrderDirection } from '../types/order-direction';
-import { Logger } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 
 /**
- * Get a provided `repository` or repository from `entityManager` which is running in transaction.
- * @param entityTarget - An entity target to get repository from `entityManager`.
- * @param repository - Fallback repository to use when `entityManager` is not provided.
- * @param entityManager - Optional `EntityManager`. It can be provided to get repository in transaction.
- * @returns Returns target repository.
+ * Get proper target repository.
+ * When entityManager is provided, it returns new repository created from the entityManager.
+ * @param baseRepository
+ * @param entityManager
  */
-export function getRepository<T extends ObjectLiteral>(
-  entityTarget: EntityTarget<T>,
-  repository: Repository<T>,
+export function getTargetRepository<E extends ObjectLiteral>(
+  baseRepository: Repository<E>,
   entityManager?: EntityManager,
-): Repository<T> {
-  return entityManager ? entityManager.getRepository(entityTarget) : repository;
+): Repository<E> {
+  return entityManager ? entityManager.getRepository(baseRepository.target) : baseRepository;
+}
+
+/**
+ * Create entity and return.
+ * @param repository
+ * @param entityLike
+ */
+export async function createWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  entityLike: DeepPartial<E>,
+): Promise<E>;
+
+/**
+ * Create entities and return.
+ * @param repository
+ * @param entityLikeArray
+ */
+export async function createWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  entityLikeArray: DeepPartial<E>[],
+): Promise<E>;
+
+export async function createWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  entityLikeOrEntityLikeArray: DeepPartial<E> | DeepPartial<E>[],
+): Promise<E | E[]> {
+  const entity = repository.create(entityLikeOrEntityLikeArray as any);
+
+  await repository.save(entity);
+
+  return entity;
+}
+
+/**
+ * Get an entity definitely.
+ * @param repository
+ * @param options
+ * @param errorCode
+ */
+export async function getOneWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  options: FindOneOptions<E>,
+  errorCode?: string,
+): Promise<E> {
+  const entity = await repository.findOne(options);
+
+  if (!entity) {
+    throw new NotFoundException(errorCode || repository.metadata.name);
+  }
+
+  return entity;
+}
+
+/**
+ * Run cursor pagination with SelectQueryBuilder.
+ * @param selectQueryBuilder
+ * @param keyColumns
+ * @param orderDirection
+ * @param cursor
+ * @param take
+ * @param cursorBuilder
+ */
+export async function cursorPaginate<E extends ObjectLiteral>({
+  selectQueryBuilder,
+  keyColumns,
+  orderDirection,
+  nextCursor,
+  previousCursor,
+  take,
+  cursorBuilder,
+}: CursorPaginateOptions<E>): Promise<PagingResultDto<E>> {
+  // Clone after ordered.
+  const previousSelectQueryBuilder = selectQueryBuilder.clone();
+
+  const nextSelectQueryBuilder = selectQueryBuilder.clone();
+
+  let data: E[] = [];
+
+  selectQueryBuilder.take(take);
+
+  if (nextCursor) {
+    const cursorValues = decodeCursor(nextCursor);
+
+    const comparisonSign = getComparisonSign(orderDirection);
+
+    // Set cursors.
+    if (cursorValues.length > 0) {
+      // Add orders.
+      for (let i = 0; i < keyColumns.length; i++) {
+        const _keyColumn = keyColumns[i];
+
+        selectQueryBuilder.addOrderBy(_keyColumn, orderDirection);
+      }
+
+      const parametersAndKeys = createParametersAndKeys(cursorValues);
+
+      selectQueryBuilder.andWhere(
+        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
+        parametersAndKeys.parameters,
+      );
+    }
+
+    data = await selectQueryBuilder.getMany();
+  } else if (previousCursor) {
+    const cursorValues = decodeCursor(previousCursor);
+
+    const reversedOrderDirection = getReversedOrderDirection(orderDirection);
+
+    const comparisonSign = getComparisonSign(reversedOrderDirection);
+
+    // Set cursors.
+    if (cursorValues.length > 0) {
+      // Add orders.
+      for (let i = 0; i < keyColumns.length; i++) {
+        const _keyColumn = keyColumns[i];
+
+        selectQueryBuilder.addOrderBy(_keyColumn, reversedOrderDirection);
+      }
+
+      const parametersAndKeys = createParametersAndKeys(cursorValues);
+
+      selectQueryBuilder.andWhere(
+        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
+        parametersAndKeys.parameters,
+      );
+    }
+
+    data = await selectQueryBuilder.getMany();
+
+    // Reverse.
+    data.reverse();
+  } else {
+    data = await selectQueryBuilder.getMany();
+  }
+
+  // Create cursor for first data to get previous cursor.
+  const newPreviousCursorValues = data[0] ? cursorBuilder(data[0]) : undefined;
+
+  const newPreviousCursor = newPreviousCursorValues ? encodeCursor(newPreviousCursorValues) : '';
+
+  // Create cursor for last data to get next cursor.
+  const newNextCursorValues = data[data.length - 1] ? cursorBuilder(data[data.length - 1]) : undefined;
+
+  const newNextCursor = newNextCursorValues ? encodeCursor(newNextCursorValues) : '';
+
+  return new PagingResultDto<E>({
+    data,
+    previousCursor: (await hasPreviousData({
+      selectQueryBuilder: previousSelectQueryBuilder,
+      previousCursor: newPreviousCursor,
+      orderDirection,
+      keyColumns,
+    }))
+      ? newPreviousCursor
+      : '',
+    nextCursor: (await hasNextData({
+      selectQueryBuilder: nextSelectQueryBuilder,
+      nextCursor: newNextCursor,
+      orderDirection,
+      keyColumns,
+    }))
+      ? newNextCursor
+      : '',
+  });
+}
+
+/**
+ * Get status of having previous data.
+ * @param selectQueryBuilder
+ * @param previousCursor
+ * @param orderDirection
+ * @param keyColumns
+ */
+async function hasPreviousData<E extends ObjectLiteral>({
+  selectQueryBuilder,
+  previousCursor,
+  orderDirection,
+  keyColumns,
+}: Omit<CursorPaginateOptions<E>, 'take' | 'cursorBuilder'>): Promise<boolean> {
+  // Set cursors.
+  if (previousCursor) {
+    const cursorValues = decodeCursor(previousCursor);
+
+    if (cursorValues.length > 0) {
+      const comparisonSign = getComparisonSign(getReversedOrderDirection(orderDirection));
+
+      const parametersAndKeys = createParametersAndKeys(cursorValues);
+
+      selectQueryBuilder.andWhere(
+        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
+        parametersAndKeys.parameters,
+      );
+
+      const previousCursorData = await selectQueryBuilder.getOne();
+
+      return !!previousCursorData;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Get status of having next data.
+ * @param selectQueryBuilder
+ * @param previousCursor
+ * @param orderDirection
+ * @param keyColumns
+ */
+async function hasNextData<E extends ObjectLiteral>({
+  selectQueryBuilder,
+  nextCursor,
+  orderDirection,
+  keyColumns,
+}: Omit<CursorPaginateOptions<E>, 'take' | 'cursorBuilder'>): Promise<boolean> {
+  // Set cursors.
+  if (nextCursor) {
+    const cursorValues = decodeCursor(nextCursor);
+
+    if (cursorValues.length > 0) {
+      const comparisonSign = getComparisonSign(orderDirection);
+
+      const parametersAndKeys = createParametersAndKeys(cursorValues);
+
+      selectQueryBuilder.andWhere(
+        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
+        parametersAndKeys.parameters,
+      );
+
+      const nextCursorData = await selectQueryBuilder.getOne();
+
+      return !!nextCursorData;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Create parameters and keys.
+ * @param cursorValues
+ */
+function createParametersAndKeys(cursorValues: any[]): ParametersAndKeys {
+  const parameterKeys: string[] = [];
+
+  const parameters: ObjectLiteral = {};
+
+  cursorValues.forEach((_cursorValue, index) => {
+    const parameterKey = `cursorValue${index}`;
+
+    parameters[parameterKey] = _cursorValue;
+    parameterKeys.push(`:${parameterKey}`);
+  });
+
+  return {
+    parameterKeys,
+    parameters,
+  };
 }
 
 /**
@@ -23,7 +279,7 @@ export function getRepository<T extends ObjectLiteral>(
  * @param cursorArray - Cursor values. Items order is important.
  * @returns Returns encoded string.
  */
-export function encodeCursor(cursorArray: any[]): string {
+function encodeCursor(cursorArray: any[]): string {
   // To prevent error with Korean, use `encodeURI()` function.
   return btoa(encodeURI(JSON.stringify(cursorArray)));
 }
@@ -33,54 +289,33 @@ export function encodeCursor(cursorArray: any[]): string {
  * @param cursor - Cursor string.
  * @returns Returns decoded cursor values.
  */
-export function decodeCursor(cursor: string): any[] {
+function decodeCursor(cursor: string): any[] {
   // To get Korean, use `decodeURI()` function.
   return JSON.parse(decodeURI(atob(cursor)));
 }
 
-/**
- * Paginate with `SelectQueryBuilder` to get `PagingResultDto`.
- * @param selectQueryBuilder - `SelectQueryBuilder` to get data. This method only runs `getMany()` method.
- * @param buildCursor - Function to build cursor array. Parameter `item` is the last item of loaded data.
- *  It should return values for sorting columns.
- */
-export async function paginate<T extends ObjectLiteral>(
-  selectQueryBuilder: SelectQueryBuilder<T>,
-  buildCursor: (item: T) => any[] | void,
-): Promise<PagingResultDto<T>> {
-  const logger = new Logger('paginate');
-
-  logger.log('Paginate query: ' + selectQueryBuilder.getQuery());
-  logger.log('Paginate parameters: ' + JSON.stringify(selectQueryBuilder.getParameters()));
-
-  // Get data.
-  const data = await selectQueryBuilder.getMany();
-
-  // Get last item.
-  const lastItem = data[data.length - 1];
-
-  // Create cursor.
-  const cursor = lastItem ? buildCursor(lastItem) : undefined;
-
-  // Create `PagingResultDto`.
-  return new PagingResultDto<T>({
-    data,
-    // When `lastItem` exists, build cursor.
-    nextCursor: cursor ? encodeCursor(cursor) : undefined,
-  });
+function getReversedOrderDirection(orderDirection: OrderDirection): OrderDirection {
+  return orderDirection === 'ASC' ? 'DESC' : 'ASC';
 }
 
-/**
- * Get inequality sign for cursor pagination by `orderDirection`.
- * @param orderDirection - Order direction to get proper sign.
- * @returns Returns sign by `orderDirection`.
- */
-export function getCursorSign(orderDirection: OrderDirection): string {
+function getComparisonSign(orderDirection: OrderDirection): string {
   return orderDirection === 'ASC' ? '>' : '<';
 }
 
-/** Value transformer for number column */
-export const numberColumnTransformer: ValueTransformer = {
-  from: (value: any) => (value === undefined || value === null ? 0 : parseFloat(value)),
-  to: (value: any) => value,
-};
+export interface CursorPaginateOptions<E extends ObjectLiteral> {
+  /** SelectQueryBuilder to get cursor paginating result */
+  selectQueryBuilder: SelectQueryBuilder<E>;
+
+  /** Key columns to be added to andWhere() method */
+  keyColumns: string[];
+  orderDirection: OrderDirection;
+  nextCursor?: string;
+  previousCursor?: string;
+  take: number;
+  cursorBuilder: (item: E) => any[] | void;
+}
+
+interface ParametersAndKeys {
+  parameters: ObjectLiteral;
+  parameterKeys: string[];
+}

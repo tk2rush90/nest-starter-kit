@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Generated, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Column, Entity, Generated, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
 import { Account } from './account';
 
 /**
@@ -42,10 +42,9 @@ export class SignedAccount {
   expiredAt: Date | string;
 
   /** Created date */
-  @CreateDateColumn({
+  @Column({
     name: 'created_at',
     type: 'timestamp with time zone',
-    default: new Date(),
   })
   createdAt: Date | string;
 

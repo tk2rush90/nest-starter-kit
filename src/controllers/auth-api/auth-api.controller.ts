@@ -1,183 +1,110 @@
-import {
-  Body,
-  ConflictException,
-  Controller,
-  Get,
-  Headers,
-  Logger,
-  Post,
-  Query,
-  Req,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
-import { MailService } from '../../services/mail/mail.service';
+import { Body, Controller, Get, Headers, Logger, Post, Query, UseGuards } from '@nestjs/common';
 import { AccountService } from '../../services/account/account.service';
-import { SignUpDto } from '../../dtos/sign-up-dto';
-import { EntityManager } from 'typeorm';
-import { CryptoService } from '../../services/crypto/crypto.service';
-import { DUPLICATED_EMAIL, DUPLICATED_NICKNAME, SIGN_REQUIRED } from '../../constants/errors';
+import { JoinDto } from '../../dtos/join-dto';
 import { EmailDto } from '../../dtos/email-dto';
 import { NicknameDto } from '../../dtos/nickname-dto';
 import { OtpExpiredAtDto } from '../../dtos/otp-expired-at-dto';
-import { SignInDto } from '../../dtos/sign-in-dto';
+import { LoginDto } from '../../dtos/login-dto';
 import { ProfileDto } from '../../dtos/profile-dto';
 import { AccountDto } from '../../dtos/account-dto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
-import { Request } from 'express';
-import { SignedAccountService } from '../../services/signed-account/signed-account.service';
+import { createUUID } from '../../utils/crypto';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
 export class AuthApiController {
   private readonly _logger = new Logger('AuthApiController');
 
-  constructor(
-    private readonly _entityManager: EntityManager,
-    private readonly _mailService: MailService,
-    private readonly _cryptoService: CryptoService,
-    private readonly _accountService: AccountService,
-    private readonly _signedAccountService: SignedAccountService,
-  ) {}
+  constructor(private readonly _accountService: AccountService) {}
 
   /**
    * Check email duplication.
-   * When email duplicated, it throws exception.
-   * @param emailDto - Request query to check email duplication.
+   * @param email
+   * @throws DUPLICATED_EMAIL
    */
   @Get('check/email')
-  async checkEmail(@Query() emailDto: EmailDto): Promise<void> {
-    // Check email duplication.
-    if (await this._accountService.isEmailDuplicated(emailDto.email)) {
-      throw new ConflictException(DUPLICATED_EMAIL);
-    }
+  async checkEmail(@Query() { email }: EmailDto): Promise<void> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] GET /auth/check/email`);
+
+    return this._accountService.checkEmailDuplicated(requestUUID, email);
   }
 
   /**
    * Check nickname duplication.
-   * When nickname duplicated, it throws exception.
-   * @param nicknameDto - Request query to check nickname duplication.
+   * @param nickname
+   * @throws DUPLICATED_NICKNAME
    */
   @Get('check/nickname')
-  async checkNickname(@Query() nicknameDto: NicknameDto): Promise<void> {
-    // Check nickname duplication.
-    if (await this._accountService.isNicknameDuplicated(nicknameDto.nickname)) {
-      throw new ConflictException(DUPLICATED_NICKNAME);
-    }
+  async checkNickname(@Query() { nickname }: NicknameDto): Promise<void> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] GET /auth/check/nickname`);
+
+    return this._accountService.checkNicknameDuplicated(requestUUID, nickname);
   }
 
   /**
    * Sign up to create new `Account`.
-   * @param signUpDto - Request body to sign up.
+   * @param joinDto - Request body to sign up.
+   * @throws DUPLICATED_EMAIL
+   * @throws DUPLICATED_NICKNAME
+   * @throws METHOD_NOT_IMPLEMENTED
    */
-  @Post('sign/up')
-  async signUp(@Body() signUpDto: SignUpDto): Promise<AccountDto> {
-    // Check email duplication.
-    if (await this._accountService.isEmailDuplicated(signUpDto.email)) {
-      throw new ConflictException(DUPLICATED_EMAIL);
-    }
+  @Post('join')
+  async join(@Body() joinDto: JoinDto): Promise<AccountDto> {
+    const requestUUID = createUUID();
 
-    // Check nickname duplication.
-    if (await this._accountService.isNicknameDuplicated(signUpDto.nickname)) {
-      throw new ConflictException(DUPLICATED_NICKNAME);
-    }
+    this._logger.log(`[${requestUUID}] GET /auth/join`);
 
-    // Start transaction to create `Account` and send welcome email.
-    // When email sending is failed, created `Account` will be rollback.
-    return this._entityManager.transaction(async (_entityManager) => {
-      // Create `Account`.
-      const account = await this._accountService.createAccount(signUpDto.email, signUpDto.nickname, _entityManager);
-
-      // Send welcome email.
-      await this._sendWelcomeEmail(signUpDto.email, signUpDto.nickname);
-
-      // Convert and return.
-      return this._accountService.toAccountDto(account);
-    });
-  }
-
-  /** Send welcome email */
-  private _sendWelcomeEmail(email: string, nickname: string): Promise<void> {
-    throw new Error('Method is not implemented');
+    return this._accountService.join(requestUUID, joinDto);
   }
 
   /**
-   * Send OTP mail to email which has `Account` for platform.
-   * @param request - Request to get hostname.
-   * @param emailDto - Request body to send OTP email.
-   * @returns Returns `OtpExpiredAtDto`.
+   * Send OTP to log in with account.
+   * @param email
+   * @throws ACCOUNT_NOT_FOUND
    */
-  @Post('send-otp')
-  async sendOtp(@Req() request: Request, @Body() emailDto: EmailDto): Promise<OtpExpiredAtDto> {
-    // Get account.
-    const account = await this._accountService.getAccountByEmail(emailDto.email);
+  @Post('otp/send')
+  async sendOtp(@Body() { email }: EmailDto): Promise<OtpExpiredAtDto> {
+    const requestUUID = createUUID();
 
-    // Create OTP.
-    const otp = this._cryptoService.createOtp();
+    this._logger.log(`[${requestUUID}] GET /auth/otp/send`);
 
-    // Start transaction to send OTP.
-    // When email sending is failed, saved OTP will be removed.
-    return this._entityManager.transaction(async (_entityManager) => {
-      // Save OTP and get expiry date.
-      const otpExpiredAt = await this._accountService.saveOtp(account, otp, _entityManager);
-
-      this._logger.log(request.socket.remotePort);
-      this._logger.log(request.protocol);
-      this._logger.log(request.hostname);
-
-      // Send OTP mail.
-      await this._sendOtpEmail(emailDto.email, otp);
-
-      // Create DTO and return.
-      return new OtpExpiredAtDto({
-        otpExpiredAt,
-      });
-    });
-  }
-
-  /** Send otp email */
-  private async _sendOtpEmail(email: string, otp: string): Promise<void> {
-    throw new Error('Method is not implemented');
+    return this._accountService.sendOtp(requestUUID, email);
   }
 
   /**
-   * Sign in with email and OTP.
-   * @param signInDto - Request body to sign in.
-   * @returns Returns `ProfileDto`.
+   * Default login process.
+   * @param signInDto
+   * @throws ACCOUNT_NOT_FOUND
+   * @throws OTP_NOT_FOUND
+   * @throws EXPIRED_OTP
+   * @throws INVALID_OTP
    */
-  @Post('sign/in')
-  async signIn(@Body() signInDto: SignInDto): Promise<ProfileDto> {
-    // Get account.
-    const account = await this._accountService.getAccountByEmail(signInDto.email);
+  @Post('login')
+  async login(@Body() signInDto: LoginDto): Promise<ProfileDto> {
+    const requestUUID = createUUID();
 
-    // Mark `Account` as signed and return `ProfileDto`.
-    return this._entityManager.transaction(async (_entityManager) => {
-      // Validate OTP.
-      await this._accountService.validateOtp(account, signInDto.otp, _entityManager);
+    this._logger.log(`[${requestUUID}] GET /auth/login`);
 
-      // Mark `Account` as signed.
-      const accessToken = await this._signedAccountService.markAccountAsSigned(account, _entityManager);
-
-      // Convert and return.
-      return this._accountService.toProfileDto(account, accessToken);
-    });
+    return this._accountService.login(requestUUID, signInDto);
   }
 
   /**
-   * Sign in with `accessToken`.
-   * @param accessToken - Access token to sign in.
+   * Auto login process with token.
+   * @param accessToken
+   * @throws SIGN_REQUIRED
+   * @throws ACCOUNT_NOT_FOUND
    */
-  @Post('sign/in/token')
+  @Post('login/auto')
   @UseGuards(AuthGuard)
-  async signInWithToken(@Headers('Authorization') accessToken: string): Promise<ProfileDto | void> {
-    if (accessToken) {
-      // Validate and get account.
-      const account = await this._accountService.validateAccessToken(accessToken);
+  async autoLogin(@Headers('Authorization') accessToken: string): Promise<ProfileDto | void> {
+    const requestUUID = createUUID();
 
-      // Convert and return.
-      return this._accountService.toProfileDto(account, accessToken);
-    } else {
-      throw new UnauthorizedException(SIGN_REQUIRED);
-    }
+    this._logger.log(`[${requestUUID}] GET /auth/login/auto`);
+
+    return this._accountService.autoLogin(requestUUID, accessToken);
   }
 }

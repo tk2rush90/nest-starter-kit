@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Generated, OneToMany, PrimaryColumn, Unique } from 'typeorm';
+import { Column, Entity, Generated, OneToMany, PrimaryColumn, Unique } from 'typeorm';
 import { SignedAccount } from './signed-account';
 
 /** Account table for users */
@@ -61,10 +61,9 @@ export class Account {
   avatarUrl: string | null;
 
   /** Account created date */
-  @CreateDateColumn({
+  @Column({
     name: 'created_at',
     type: 'timestamp with time zone',
-    default: new Date(),
   })
   createdAt: Date | string;
 

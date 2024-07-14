@@ -13,7 +13,6 @@ import { existsSync, writeFileSync } from 'fs';
  * It keeps aspect ratio of original image.
  * @param buffer - Buffer to resize.
  * @param targetWidth - Target width to resize.
- * @returns Returns resized buffer.
  */
 export async function resizeImageBuffer(buffer: Buffer, targetWidth: number): Promise<Buffer> {
   this._logger = new Logger('resizeImageBuffer');
@@ -123,7 +122,6 @@ function saveTemporary(filename: string, buffer: Buffer): void {
  * Capture video thumbnail.
  * The thumbnail will have same filename with video, but has `png` extension.
  * @param filename - Filename of video in media directory.
- * @returns Returns created thumbnail name.
  */
 export async function captureVideoThumbnail(filename: string): Promise<string> {
   this._logger = new Logger('captureVideoThumbnail');
@@ -168,7 +166,6 @@ export async function captureVideoThumbnail(filename: string): Promise<string> {
  * Replace extension of provided filename.
  * @param filename - Filename to replace extension.
  * @param extension - New extension to set. Do not set dot.
- * @returns Returns filename with new extension.
  */
 export function replaceExtension(filename: string, extension: string): string {
   return basename(filename, extname(filename)) + '.' + extension;
@@ -177,7 +174,6 @@ export function replaceExtension(filename: string, extension: string): string {
 /**
  * Get video metadata.
  * @param filename - Filename in media directory.
- * @returns Returns metadata read by ffprobe.
  */
 export async function getVideoMetadata(filename: string): Promise<FfprobeData> {
   this._logger = new Logger('getVideoMetadata');

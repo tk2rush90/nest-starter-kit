@@ -6,7 +6,6 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { configs } from './configs/configs';
 import { AppExceptionFilterFilter } from './filters/app-exception-filter/app-exception-filter.filter';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { AppInterceptor } from './interceptors/app/app.interceptor';
 import { ValidationError } from 'class-validator';
 import { BAD_REQUEST } from './constants/errors';
 import { json, urlencoded } from 'express';
@@ -39,9 +38,6 @@ async function bootstrap(): Promise<void> {
 
   // Use global filters.
   app.useGlobalFilters(new AppExceptionFilterFilter());
-
-  // Use global interceptor.
-  app.useGlobalInterceptors(new AppInterceptor());
 
   // Add global pipes.
   app.useGlobalPipes(

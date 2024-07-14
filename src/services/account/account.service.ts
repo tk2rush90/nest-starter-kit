@@ -1,30 +1,30 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../../entities/account';
 import { EntityManager, Repository } from 'typeorm';
-import { getRepository } from '../../utils/typeorm';
-import { CryptoService } from '../crypto/crypto.service';
+import { createWrapper, getOneWrapper, getTargetRepository } from '../../utils/typeorm';
 import { MINUTE, YEAR } from '../../constants/milliseconds';
 import {
   ACCOUNT_NOT_FOUND,
+  DUPLICATED_EMAIL,
+  DUPLICATED_NICKNAME,
   EXPIRED_OTP,
   INVALID_OTP,
+  METHOD_NOT_IMPLEMENTED,
   OTP_NOT_FOUND,
   SIGN_REQUIRED,
-  UNEXPECTED_ERROR,
 } from '../../constants/errors';
-import { JwtService } from '../jwt/jwt.service';
 import { AccountDto } from '../../dtos/account-dto';
 import { ProfileDto } from '../../dtos/profile-dto';
 import { File } from '../../entities/file';
 import { configs } from '../../configs/configs';
 import { SignedAccountService } from '../signed-account/signed-account.service';
+import { MailService } from '../mail/mail.service';
+import { JoinDto } from '../../dtos/join-dto';
+import { OtpExpiredAtDto } from '../../dtos/otp-expired-at-dto';
+import { createOtp, createSalt, encrypt } from '../../utils/crypto';
+import { verifyToken } from '../../utils/jwt';
+import { LoginDto } from '../../dtos/login-dto';
 
 /** A service that contains database related features for `Account` */
 @Injectable()
@@ -33,80 +33,233 @@ export class AccountService {
 
   constructor(
     @InjectRepository(Account) private readonly _accountRepository: Repository<Account>,
-    private readonly _jwtService: JwtService,
-    private readonly _cryptoService: CryptoService,
+    private readonly _entityManager: EntityManager,
+    private readonly _mailService: MailService,
     private readonly _signedAccountService: SignedAccountService,
   ) {}
 
   /**
-   * Get duplicated status of `email` in `Account`.
-   * @param email - Email to check.
-   * @returns Returns duplicated status.
+   * Check email duplicated.
+   * When duplicated, throws DUPLICATED_EMAIL error.
+   * @param requestUUID
+   * @param email
+   * @throws DUPLICATED_EMAIL
+   */
+  async checkEmailDuplicated(requestUUID: string, email: string): Promise<void> {
+    // Check email duplication.
+    if (await this.isEmailDuplicated(email)) {
+      this._logger.error(`[${requestUUID}] Email is duplicated: ${email}`);
+
+      throw new ConflictException(DUPLICATED_EMAIL);
+    } else {
+      this._logger.error(`[${requestUUID}] Email duplication checked: ${email}`);
+    }
+  }
+
+  /**
+   * Check nickname duplicated.
+   * When duplicated, throws DUPLICATED_NICKNAME error.
+   * @param requestUUID
+   * @param nickname
+   * @throws DUPLICATED_NICKNAME
+   */
+  async checkNicknameDuplicated(requestUUID: string, nickname: string): Promise<void> {
+    // Check nickname duplication.
+    if (await this.isNicknameDuplicated(nickname)) {
+      this._logger.error(`[${requestUUID}] Nickname is duplicated: ${nickname}`);
+
+      throw new ConflictException(DUPLICATED_NICKNAME);
+    } else {
+      this._logger.error(`[${requestUUID}] Nickname duplication checked: ${nickname}`);
+    }
+  }
+
+  /**
+   * Create account to join.
+   * @param requestUUID
+   * @param email
+   * @param nickname
+   * @throws DUPLICATED_EMAIL
+   * @throws DUPLICATED_NICKNAME
+   * @throws METHOD_NOT_IMPLEMENTED
+   */
+  async join(requestUUID: string, { email, nickname }: JoinDto): Promise<AccountDto> {
+    await this.checkEmailDuplicated(requestUUID, email);
+
+    await this.checkNicknameDuplicated(requestUUID, nickname);
+
+    return this._entityManager
+      .transaction(async (_entityManager) => {
+        const account = await this.createAccount(email, nickname, _entityManager);
+
+        this._logger.log(`[${requestUUID}] Account is created: ${account.id}`);
+
+        await this._mailService.sendMail(email, '계정이 생성 되었습니다', 'welcome.html', {
+          nickname,
+        });
+
+        this._logger.log(`[${requestUUID}] Welcome email is sent: ${email}`);
+
+        return this.toAccountDto(account);
+      })
+      .catch((e) => {
+        this._logger.error(`[${requestUUID}] Error while joining: ${e}`, e.stack);
+
+        throw e;
+      });
+  }
+
+  /**
+   * Send OTP to email.
+   * @param requestUUID
+   * @param email
+   * @throws ACCOUNT_NOT_FOUND
+   * @throws
+   */
+  async sendOtp(requestUUID: string, email: string): Promise<OtpExpiredAtDto> {
+    // Get account.
+    const account = await this.getAccountByEmail(email);
+
+    this._logger.log(`[${requestUUID}] Account is found by email: ${email}`);
+
+    // Create OTP.
+    const otp = createOtp();
+
+    this._logger.log(`[${requestUUID}]: OTP is created`);
+
+    // Start transaction to send OTP.
+    // When email sending is failed, saved OTP will be removed.
+    return this._entityManager
+      .transaction(async (_entityManager) => {
+        // Save OTP and get expiry date.
+        const otpExpiredAt = await this.saveOtp(account, otp, _entityManager);
+
+        this._logger.log(`[${requestUUID}]: OTP is saved`);
+
+        await this._mailService.sendMail(email, 'OTP가 발급 되었습니다', 'otp.html', {
+          nickname: account.nickname,
+          otp,
+        });
+
+        this._logger.log(`[${requestUUID}]: OTP created email is sent: ${email}`);
+
+        // Create DTO and return.
+        return new OtpExpiredAtDto({
+          otpExpiredAt,
+        });
+      })
+      .catch((e) => {
+        this._logger.error(`[${requestUUID}] Error while sending Otp email: ${e}`, e.stack);
+
+        throw e;
+      });
+  }
+
+  /**
+   * Default login process.
+   * @param requestUUID
+   * @param email
+   * @param otp
+   * @throws ACCOUNT_NOT_FOUND
+   * @throws OTP_NOT_FOUND
+   * @throws EXPIRED_OTP
+   * @throws INVALID_OTP
+   */
+  async login(requestUUID: string, { email, otp }: LoginDto): Promise<ProfileDto> {
+    // Get account.
+    const account = await this.getAccountByEmail(email);
+
+    this._logger.log(`[${requestUUID}] Account is found by email: ${email}`);
+
+    // Mark `Account` as signed and return `ProfileDto`.
+    return this._entityManager
+      .transaction(async (_entityManager) => {
+        // Validate OTP.
+        await this.validateOtp(account, otp, _entityManager);
+
+        this._logger.log(`[${requestUUID}] OTP is validated`);
+
+        // Mark `Account` as signed.
+        const accessToken = await this._signedAccountService.markAccountAsSigned(account, _entityManager);
+
+        this._logger.log(`[${requestUUID}] Account is marked as signed`);
+
+        // Convert and return.
+        return this.toProfileDto(account, accessToken);
+      })
+      .catch((e) => {
+        this._logger.error(`[${requestUUID}] Error while logging in: ${e}`, e.stack);
+
+        throw e;
+      });
+  }
+
+  /**
+   * Auto login process with token.
+   * @param requestUUID
+   * @param accessToken
+   * @throws SIGN_REQUIRED
+   * @throws ACCOUNT_NOT_FOUND
+   */
+  async autoLogin(requestUUID: string, accessToken: string): Promise<ProfileDto | void> {
+    if (accessToken) {
+      // Validate and get account.
+      const account = await this.validateAccessToken(accessToken);
+
+      this._logger.log(`[${requestUUID}] Access token is validated: ${account.id}`);
+
+      // Convert and return.
+      return this.toProfileDto(account, accessToken);
+    } else {
+      this._logger.error(`[${requestUUID}] Access token isn't provided`);
+
+      throw new UnauthorizedException(SIGN_REQUIRED);
+    }
+  }
+
+  /**
+   * Get duplicated status of email.
+   * @param email
    */
   async isEmailDuplicated(email: string): Promise<boolean> {
-    const accountCount = await this._accountRepository
-      .count({
-        where: {
-          email,
-        },
-      })
-      .catch((e) => {
-        this._logger.error(`Failed to check email duplication '${email}': ${e.toString()}`, e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    const accountCount = await this._accountRepository.count({
+      where: {
+        email,
+      },
+    });
 
     return accountCount > 0;
   }
 
   /**
-   * Get duplicated status of `nickname` in `Account`.
-   * @param nickname - Nickname to check.
-   * @returns Returns duplicated status.
+   * Get duplicated status of nickname.
+   * @param nickname
    */
   async isNicknameDuplicated(nickname: string): Promise<boolean> {
-    const accountCount = await this._accountRepository
-      .count({
-        where: {
-          nickname,
-        },
-      })
-      .catch((e) => {
-        this._logger.error(`Failed to check nickname duplication '${nickname}': ${e.toString()}`, e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    const accountCount = await this._accountRepository.count({
+      where: {
+        nickname,
+      },
+    });
 
     return accountCount > 0;
   }
 
   /**
-   * Get an `Account` by email.
-   * It throws NotFoundException when there is no `Account`.
-   * @param email - Email to find `Account`.
-   * @returns Returns found `Account`.
+   * Get an account by email.
+   * @param email
+   * @throws ACCOUNT_NOT_FOUND
    */
   async getAccountByEmail(email: string): Promise<Account> {
-    // Find account.
-    const account = await this._accountRepository
-      .findOne({
+    return getOneWrapper(
+      this._accountRepository,
+      {
         where: {
           email,
         },
-      })
-      .catch((e) => {
-        this._logger.error(`Failed to get account by email '${email}': ${e.toString()}`, e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
-
-    // When not found, throw exception.
-    if (!account) {
-      throw new NotFoundException(ACCOUNT_NOT_FOUND);
-    }
-
-    // Return.
-    return account;
+      },
+      ACCOUNT_NOT_FOUND,
+    );
   }
 
   /**
@@ -116,7 +269,7 @@ export class AccountService {
    */
   async getAccountByAccessToken(accessToken: string): Promise<Account> {
     // Verify access token.
-    const payload = await this._jwtService.verify(accessToken).catch((e) => {
+    const payload = await verifyToken(accessToken).catch((e) => {
       this._logger.error('Failed to verify access token: ' + e.toString(), e.stack);
 
       throw new UnauthorizedException(SIGN_REQUIRED);
@@ -134,17 +287,11 @@ export class AccountService {
    */
   async getAccountById(id: string): Promise<Account> {
     // Find account.
-    const account = await this._accountRepository
-      .findOne({
-        where: {
-          id,
-        },
-      })
-      .catch((e) => {
-        this._logger.error(`Failed to get account by id '${id}': ${e.toString()}`, e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    const account = await this._accountRepository.findOne({
+      where: {
+        id,
+      },
+    });
 
     // When not found, throw exception.
     if (!account) {
@@ -165,28 +312,18 @@ export class AccountService {
    */
   async createAccount(email: string, nickname: string, entityManager?: EntityManager): Promise<Account> {
     // Get target repository.
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
     // Create random salt string.
-    const salt = this._cryptoService.createSalt();
+    const salt = createSalt();
 
-    // Create account.
-    const account = accountRepository.create({
+    return createWrapper(accountRepository, {
       email,
       nickname,
       salt,
       accountExpiredAt: new Date(Date.now() + YEAR),
+      createdAt: new Date(),
     });
-
-    // Save account.
-    await accountRepository.save(account).catch((e) => {
-      this._logger.error('Failed to save created account: ' + e.toString(), e.stack);
-
-      throw new InternalServerErrorException(UNEXPECTED_ERROR);
-    });
-
-    // Return.
-    return account;
   }
 
   /**
@@ -199,30 +336,24 @@ export class AccountService {
    */
   async saveOtp(account: Account, otp: string, entityManager?: EntityManager): Promise<Date> {
     // Get target repository.
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
     // Create expiry date.
     const otpExpiredAt = new Date(Date.now() + MINUTE * 3);
 
     // Encrypt OTP.
-    const encryptedOtp = this._cryptoService.encrypt(otp, account.salt);
+    const encryptedOtp = encrypt(otp, account.salt);
 
     // Update `Account` with OTP and expiry date.
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          otp: encryptedOtp,
-          otpExpiredAt,
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to save OTP to account: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await accountRepository.update(
+      {
+        id: account.id,
+      },
+      {
+        otp: encryptedOtp,
+        otpExpiredAt,
+      },
+    );
 
     // Returns expiry date.
     return otpExpiredAt;
@@ -241,7 +372,7 @@ export class AccountService {
     }
 
     // Encrypt OTP.
-    const encryptedOtp = this._cryptoService.encrypt(otp, account.salt);
+    const encryptedOtp = encrypt(otp, account.salt);
 
     // Check expiry date.
     if (new Date(account.otpExpiredAt).getTime() < Date.now()) {
@@ -267,64 +398,46 @@ export class AccountService {
    */
   async removeOtp(account: Account, entityManager?: EntityManager): Promise<void> {
     // Get target repository.
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
     // Remove OTP and OTP expiry date.
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          otp: null,
-          otpExpiredAt: null,
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to remove OTP from account: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await accountRepository.update(
+      {
+        id: account.id,
+      },
+      {
+        otp: null,
+        otpExpiredAt: null,
+      },
+    );
   }
 
   /** Remove existing avatar url */
   async removeAvatarUrl(account: Account, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          avatarUrl: null,
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to remove avatar url: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await accountRepository.update(
+      {
+        id: account.id,
+      },
+      {
+        avatarUrl: null,
+      },
+    );
   }
 
   /** Update avatar url by file */
   async updateAvatarUrl(account: Account, file: File, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          avatarUrl: configs.urls.assets + `/${file.id}.${file.extension}`,
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to update avatar url: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await accountRepository.update(
+      {
+        id: account.id,
+      },
+      {
+        avatarUrl: configs.urls.assets + `/${file.id}.${file.extension}`,
+      },
+    );
   }
 
   /**
@@ -335,23 +448,17 @@ export class AccountService {
    */
   async updateNickname(account: Account, nickname: string, entityManager?: EntityManager): Promise<void> {
     // Get target repository.
-    const accountRepository = getRepository(Account, this._accountRepository, entityManager);
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
     // Update nickname.
-    await accountRepository
-      .update(
-        {
-          id: account.id,
-        },
-        {
-          nickname: nickname,
-        },
-      )
-      .catch((e) => {
-        this._logger.error('Failed to update account nickname: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await accountRepository.update(
+      {
+        id: account.id,
+      },
+      {
+        nickname: nickname,
+      },
+    );
   }
 
   /**
@@ -367,7 +474,7 @@ export class AccountService {
    */
   async validateAccessToken(accessToken: string): Promise<Account> {
     // Verify access token.
-    const payload = await this._jwtService.verify(accessToken).catch((e) => {
+    const payload = await verifyToken(accessToken).catch((e) => {
       this._logger.error('Failed to verify access token: ' + e.toString(), e.stack);
 
       throw new UnauthorizedException(SIGN_REQUIRED);
@@ -377,7 +484,7 @@ export class AccountService {
     const account = await this.getAccountByEmail(payload.email);
 
     // Encrypt access token to find `SignedAccount`.
-    const encryptedAccessToken = this._cryptoService.encrypt(accessToken, account.salt);
+    const encryptedAccessToken = encrypt(accessToken, account.salt);
 
     // Find `SignedAccount`
     const signedAccount = await this._signedAccountService.getSignedAccount(account, encryptedAccessToken);
@@ -396,15 +503,9 @@ export class AccountService {
    */
   async deleteAccount(account: Account): Promise<void> {
     // Delete account.
-    await this._accountRepository
-      .delete({
-        id: account.id,
-      })
-      .catch((e) => {
-        this._logger.error('Failed to delete account: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    await this._accountRepository.delete({
+      id: account.id,
+    });
   }
 
   /**

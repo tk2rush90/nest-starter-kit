@@ -8,10 +8,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { utilities, WinstonModule } from 'nest-winston';
 import { format, transports } from 'winston';
 import 'winston-daily-rotate-file';
-import { File } from './entities/file';
 import { Account } from './entities/account';
 import { SignedAccount } from './entities/signed-account';
 import { AuthApiModule } from './modules/auth-api/auth-api.module';
+import { UploadDetail } from './entities/upload-detail';
+import { FileApiModule } from './modules/file-api/file-api.module';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { AuthApiModule } from './modules/auth-api/auth-api.module';
       database: configs.db.database,
       username: configs.db.username,
       password: configs.db.password,
-      entities: [File, Account, SignedAccount],
+      entities: [Account, SignedAccount, UploadDetail],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       migrationsRun: true,
       synchronize: !configs.etc.production,
@@ -59,6 +60,7 @@ import { AuthApiModule } from './modules/auth-api/auth-api.module';
         }),
       ],
     }),
+    FileApiModule,
     AuthApiModule,
   ],
   controllers: [AppController],

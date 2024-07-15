@@ -59,21 +59,18 @@ export async function resizeImageBuffer(buffer: Buffer, targetWidth: number): Pr
 }
 
 /**
- * Resize video.
- * @param filename - Filename to save as temporary and process.
- * @param buffer - Buffer to save as temporary.
+ * Format a video.
+ * @param sourceFilePath
+ * @param targetFilePath
  */
-export async function formatVideo(filename: string, buffer: Buffer): Promise<void> {
+export async function formatVideo(sourceFilePath: string, targetFilePath: string): Promise<void> {
   this._logger = new Logger('formatVideo');
-
-  // Save temporary file.
-  saveTemporary(filename, buffer);
 
   return new Promise((resolve, reject) => {
     // Error message to contain stderr.
     let errorMessage = '';
 
-    FluentFFMpeg(join(configs.paths.temporaryFiles, filename))
+    FluentFFMpeg(sourceFilePath)
       .outputOptions(['-vf', `scale='min(1024,iw):-2'`, '-c:a copy', '-b:v 800k'])
       .format('mp4') // 결과물을 MP4 형식으로 인코딩
       .on('end', () => {
@@ -88,29 +85,26 @@ export async function formatVideo(filename: string, buffer: Buffer): Promise<voi
 
         reject(err);
       })
-      .save(join(configs.paths.files, filename));
+      .save(targetFilePath);
   });
 }
 
 /**
  * Save temporary file.
- * @param filename - Filename to save as temporary.
+ * @param filePath
  * @param buffer - File buffer to save.
  */
-function saveTemporary(filename: string, buffer: Buffer): void {
-  // Create upload target path.
-  const uploadTargetPath = join(configs.paths.temporaryFiles, filename);
-
+function saveTemporary(filePath: string, buffer: Buffer): void {
   // Check duplicated filename.
-  if (existsSync(uploadTargetPath)) {
-    this._logger.error('Temporary filename is duplicated for: ' + filename);
+  if (existsSync(filePath)) {
+    this._logger.error('Temporary filename is duplicated for: ' + filePath);
 
     throw new InternalServerErrorException(UNEXPECTED_ERROR);
   }
 
   try {
     // Create file.
-    writeFileSync(uploadTargetPath, buffer);
+    writeFileSync(filePath, buffer);
   } catch (e) {
     this._logger.error('Failed to save temporary file: ' + e.toString(), e.stack);
 

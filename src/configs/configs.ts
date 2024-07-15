@@ -6,8 +6,6 @@ export const configs = {
     assets: join(__dirname, '..', 'assets'), // Path to static assets.
     logs: process.env.LOGS_PATH || '', // Path to logs.
     files: process.env.FILES_PATH || '', // Path to uploaded files.
-    temporaryFiles: process.env.TEMPORARY_FILES_PATH || '', // Path to temporary files.
-    deletedFiles: process.env.DELETED_FILES_PATH || '', // Path to deleted files.
     emailTemplates: join(__dirname, '..', 'email-templates'), // Path to email templates.
   },
   // Url prefix configurations.

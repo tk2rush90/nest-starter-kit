@@ -5,6 +5,5 @@ import { AccountModule } from '../account/account.module';
 @Module({
   imports: [AccountModule],
   controllers: [AuthApiController],
-  providers: [],
 })
 export class AuthApiModule {}

@@ -10,14 +10,11 @@ import {
   DUPLICATED_NICKNAME,
   EXPIRED_OTP,
   INVALID_OTP,
-  METHOD_NOT_IMPLEMENTED,
   OTP_NOT_FOUND,
   SIGN_REQUIRED,
 } from '../../constants/errors';
 import { AccountDto } from '../../dtos/account-dto';
 import { ProfileDto } from '../../dtos/profile-dto';
-import { File } from '../../entities/file';
-import { configs } from '../../configs/configs';
 import { SignedAccountService } from '../signed-account/signed-account.service';
 import { MailService } from '../mail/mail.service';
 import { JoinDto } from '../../dtos/join-dto';
@@ -412,55 +409,6 @@ export class AccountService {
     );
   }
 
-  /** Remove existing avatar url */
-  async removeAvatarUrl(account: Account, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
-
-    await accountRepository.update(
-      {
-        id: account.id,
-      },
-      {
-        avatarUrl: null,
-      },
-    );
-  }
-
-  /** Update avatar url by file */
-  async updateAvatarUrl(account: Account, file: File, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
-
-    await accountRepository.update(
-      {
-        id: account.id,
-      },
-      {
-        avatarUrl: configs.urls.assets + `/${file.id}.${file.extension}`,
-      },
-    );
-  }
-
-  /**
-   * Update account nickname.
-   * @param account - Account to update.
-   * @param nickname - Nickname to set.
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async updateNickname(account: Account, nickname: string, entityManager?: EntityManager): Promise<void> {
-    // Get target repository.
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
-
-    // Update nickname.
-    await accountRepository.update(
-      {
-        id: account.id,
-      },
-      {
-        nickname: nickname,
-      },
-    );
-  }
-
   /**
    * Validate provided `accessToken`.
    * Validation will be done in 3 steps.
@@ -473,15 +421,7 @@ export class AccountService {
    * @returns Returns validated account.
    */
   async validateAccessToken(accessToken: string): Promise<Account> {
-    // Verify access token.
-    const payload = await verifyToken(accessToken).catch((e) => {
-      this._logger.error('Failed to verify access token: ' + e.toString(), e.stack);
-
-      throw new UnauthorizedException(SIGN_REQUIRED);
-    });
-
-    // Get account.
-    const account = await this.getAccountByEmail(payload.email);
+    const account = await this.getAccountByAccessToken(accessToken);
 
     // Encrypt access token to find `SignedAccount`.
     const encryptedAccessToken = encrypt(accessToken, account.salt);

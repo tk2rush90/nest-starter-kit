@@ -81,7 +81,6 @@ export class FileApiController {
   @UseGuards(AuthGuard)
   @UseInterceptors(
     FilesInterceptor('files', undefined, {
-      dest: configs.paths.files,
       storage: diskStorage({
         destination: configs.paths.files,
         filename(req: Request, file: Express.Multer.File, callback: (error: Error | null, filename: string) => void) {

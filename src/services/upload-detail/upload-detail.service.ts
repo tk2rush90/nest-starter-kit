@@ -15,7 +15,7 @@ export class UploadDetailService {
    */
   async createUploadDetail(file: Express.Multer.File): Promise<UploadDetail> {
     return createWrapper(this._uploadDetailRepository, {
-      filename: file.originalname,
+      filename: file.filename,
       fileSize: file.size,
       mimetype: file.mimetype,
       storagePath: file.destination,

@@ -3,10 +3,11 @@ import { FileApiController } from '../../controllers/file-api/file-api.controlle
 import { UploadDetailModule } from '../upload-detail/upload-detail.module';
 import { AccountModule } from '../account/account.module';
 import { AuthGuard } from '../../guards/auth/auth.guard';
+import { FileApiService } from '../../services/file-api/file-api.service';
 
 @Module({
   imports: [UploadDetailModule, AccountModule],
   controllers: [FileApiController],
-  providers: [AuthGuard],
+  providers: [AuthGuard, FileApiService],
 })
 export class FileApiModule {}

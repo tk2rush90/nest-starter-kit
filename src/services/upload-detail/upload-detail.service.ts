@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UploadDetail } from '../../entities/upload-detail';
-import { Repository } from 'typeorm';
-import { createWrapper, getOneWrapper } from '../../utils/typeorm';
+import { EntityManager, Repository } from 'typeorm';
+import { createWrapper, getOneWrapper, getTargetRepository } from '../../utils/typeorm';
 import { UPLOADED_DETAIL_NOT_FOUND } from '../../constants/errors';
 
 @Injectable()
@@ -12,9 +12,12 @@ export class UploadDetailService {
   /**
    * Create uploaded details for uploaded file.
    * @param file
+   * @param entityManager
    */
-  async createUploadDetail(file: Express.Multer.File): Promise<UploadDetail> {
-    return createWrapper(this._uploadDetailRepository, {
+  async createUploadDetail(file: Express.Multer.File, entityManager?: EntityManager): Promise<UploadDetail> {
+    const uploadDetailRepository = getTargetRepository(this._uploadDetailRepository, entityManager);
+
+    return createWrapper(uploadDetailRepository, {
       filename: file.filename,
       fileSize: file.size,
       mimetype: file.mimetype,

@@ -2,6 +2,7 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
   Param,
   ParseFilePipeBuilder,
   Post,
@@ -12,22 +13,21 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { UploadDetailService } from '../../services/upload-detail/upload-detail.service';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { MB } from '../../constants/units';
 import { configs } from '../../configs/configs';
 import { diskStorage } from 'multer';
 import { Request, Response } from 'express';
 import { createUUID } from '../../utils/crypto';
-import { extname, join } from 'path';
-import { UploadDetail } from '../../entities/upload-detail';
-import { createReadStream, readFileSync } from 'fs';
-import { toInteger } from 'lodash';
+import { extname } from 'path';
 import { AuthGuard } from '../../guards/auth/auth.guard';
+import { FileApiService } from '../../services/file-api/file-api.service';
 
 @Controller('file')
 export class FileApiController {
-  constructor(private readonly _uploadedDetailService: UploadDetailService) {}
+  private readonly _logger = new Logger('FileApiController');
+
+  constructor(private readonly _fileApiService: FileApiService) {}
 
   /**
    * Streaming file.
@@ -42,35 +42,11 @@ export class FileApiController {
     @Res({ passthrough: true }) response: Response,
     @Param('id') uploadedDetailId: string,
   ): Promise<StreamableFile> {
-    const uploadedDetail = await this._uploadedDetailService.getUploadedDetailById(uploadedDetailId);
+    const requestUUID = createUUID();
 
-    const filePath = join(uploadedDetail.storagePath, uploadedDetail.filename);
+    this._logger.log(`[${requestUUID}] GET /file/:id`);
 
-    if (uploadedDetail.mimetype.startsWith('video') && request.headers.range) {
-      const fileSize = toInteger(uploadedDetail.fileSize);
-
-      const parts = request.headers.range.replace(/bytes=/, '').split('-');
-
-      const start = parseInt(parts[0], 10);
-
-      const end = parts[1] ? parseInt(parts[1], 10) : undefined;
-
-      const readStream = createReadStream(filePath, { start, end });
-
-      response.status(206); // Partial Content
-      response.setHeader(
-        'Content-Range',
-        `bytes ${start}-${end || (readStream.bytesRead || fileSize) - 1}/${readStream.bytesRead || fileSize}`,
-      );
-      response.setHeader('Accept-Ranges', 'bytes');
-      response.setHeader('Cache-Control', 'max-age=3153600');
-
-      return new StreamableFile(readStream);
-    } else {
-      response.setHeader('Cache-Control', 'max-age=3153600');
-
-      return new StreamableFile(readFileSync(filePath));
-    }
+    return this._fileApiService.getFileStream(requestUUID, request, response, uploadedDetailId);
   }
 
   /**
@@ -105,13 +81,11 @@ export class FileApiController {
     )
     files: Express.Multer.File[],
   ): Promise<string[]> {
-    const uploadedDetails: UploadDetail[] = [];
+    const requestUUID = createUUID();
 
-    for (const _file of files) {
-      uploadedDetails.push(await this._uploadedDetailService.createUploadDetail(_file));
-    }
+    this._logger.log(`[${requestUUID}] POST /file/upload`);
 
-    return uploadedDetails.map((_uploadedDetail) => _uploadedDetail.id);
+    return this._fileApiService.uploadFiles(requestUUID, files);
   }
 
   /**
@@ -119,11 +93,13 @@ export class FileApiController {
    * @param uploadedDetailId
    * @throws UPLOADED_DETAIL_NOT_FOUND
    */
-  @Delete('delete/:id')
+  @Delete(':id')
   @UseGuards(AuthGuard)
   async deleteFile(@Param('id') uploadedDetailId: string): Promise<void> {
-    const uploadedDetail = await this._uploadedDetailService.getUploadedDetailById(uploadedDetailId);
+    const requestUUID = createUUID();
 
-    await this._uploadedDetailService.deleteUploadedDetail(uploadedDetail);
+    this._logger.log(`[${requestUUID}] DELETE /file/:id`);
+
+    return this._fileApiService.deleteFile(requestUUID, uploadedDetailId);
   }
 }

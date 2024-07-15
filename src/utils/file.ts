@@ -6,7 +6,17 @@ import * as FluentFFMpeg from 'fluent-ffmpeg';
 import { FfprobeData } from 'fluent-ffmpeg';
 import { basename, extname, join } from 'path';
 import { configs } from '../configs/configs';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, unlinkSync } from 'fs';
+
+/**
+ * Delete file if exists.
+ * @param filePath
+ */
+export function deleteFileIfExists(filePath: string): void {
+  if (existsSync(filePath)) {
+    unlinkSync(filePath);
+  }
+}
 
 /**
  * Resize image buffer by `targetWidth`.
@@ -87,29 +97,6 @@ export async function formatVideo(sourceFilePath: string, targetFilePath: string
       })
       .save(targetFilePath);
   });
-}
-
-/**
- * Save temporary file.
- * @param filePath
- * @param buffer - File buffer to save.
- */
-function saveTemporary(filePath: string, buffer: Buffer): void {
-  // Check duplicated filename.
-  if (existsSync(filePath)) {
-    this._logger.error('Temporary filename is duplicated for: ' + filePath);
-
-    throw new InternalServerErrorException(UNEXPECTED_ERROR);
-  }
-
-  try {
-    // Create file.
-    writeFileSync(filePath, buffer);
-  } catch (e) {
-    this._logger.error('Failed to save temporary file: ' + e.toString(), e.stack);
-
-    throw new InternalServerErrorException(UNEXPECTED_ERROR);
-  }
 }
 
 /**

@@ -18,7 +18,6 @@ export class SignedAccountService {
    * It creates new access token for `Account`.
    * @param account - `Account` to mark as signed.
    * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns created access token.
    */
   async markAccountAsSigned(account: Account, entityManager: EntityManager): Promise<string> {
     // Get repository.
@@ -62,7 +61,10 @@ export class SignedAccountService {
     );
   }
 
-  /** Update expiry date of signed account */
+  /**
+   * Update expiry date of signed account.
+   * @param signedAccount
+   */
   async updateExpiryDate(signedAccount: SignedAccount): Promise<void> {
     // Update expiry date of `SignedAccount`.
     await this._signedAccountRepository.update(
@@ -73,5 +75,15 @@ export class SignedAccountService {
         expiredAt: new Date(Date.now() + YEAR), // Expired after 1 year.
       },
     );
+  }
+
+  /**
+   * Delete signed account.
+   * @param signedAccount
+   */
+  async deleteSignedAccount(signedAccount: SignedAccount): Promise<void> {
+    await this._signedAccountRepository.delete({
+      id: signedAccount.id,
+    });
   }
 }

@@ -3,6 +3,9 @@ export class ProfileDto {
   /** Account id */
   id: string;
 
+  /** Avatar id */
+  avatarId: string | null;
+
   /** Account nickname */
   nickname: string;
 

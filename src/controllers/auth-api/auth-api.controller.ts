@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Headers, Logger, Post, Query, UseGuards } from '@nestjs/common';
-import { AccountService } from '../../services/account/account.service';
 import { JoinDto } from '../../dtos/join-dto';
 import { EmailDto } from '../../dtos/email-dto';
 import { NicknameDto } from '../../dtos/nickname-dto';
@@ -9,13 +8,14 @@ import { ProfileDto } from '../../dtos/profile-dto';
 import { AccountDto } from '../../dtos/account-dto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { createUUID } from '../../utils/crypto';
+import { AuthApiService } from '../../services/auth-api/auth-api.service';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
 export class AuthApiController {
   private readonly _logger = new Logger('AuthApiController');
 
-  constructor(private readonly _accountService: AccountService) {}
+  constructor(private readonly _authApiService: AuthApiService) {}
 
   /**
    * Check email duplication.
@@ -28,7 +28,7 @@ export class AuthApiController {
 
     this._logger.log(`[${requestUUID}] GET /auth/check/email`);
 
-    return this._accountService.checkEmailDuplicated(requestUUID, email);
+    return this._authApiService.checkEmailDuplicated(requestUUID, email);
   }
 
   /**
@@ -42,7 +42,7 @@ export class AuthApiController {
 
     this._logger.log(`[${requestUUID}] GET /auth/check/nickname`);
 
-    return this._accountService.checkNicknameDuplicated(requestUUID, nickname);
+    return this._authApiService.checkNicknameDuplicated(requestUUID, nickname);
   }
 
   /**
@@ -56,9 +56,9 @@ export class AuthApiController {
   async join(@Body() joinDto: JoinDto): Promise<AccountDto> {
     const requestUUID = createUUID();
 
-    this._logger.log(`[${requestUUID}] GET /auth/join`);
+    this._logger.log(`[${requestUUID}] POST /auth/join`);
 
-    return this._accountService.join(requestUUID, joinDto);
+    return this._authApiService.join(requestUUID, joinDto);
   }
 
   /**
@@ -70,9 +70,9 @@ export class AuthApiController {
   async sendOtp(@Body() { email }: EmailDto): Promise<OtpExpiredAtDto> {
     const requestUUID = createUUID();
 
-    this._logger.log(`[${requestUUID}] GET /auth/otp/send`);
+    this._logger.log(`[${requestUUID}] POST /auth/otp/send`);
 
-    return this._accountService.sendOtp(requestUUID, email);
+    return this._authApiService.sendOtp(requestUUID, email);
   }
 
   /**
@@ -87,9 +87,9 @@ export class AuthApiController {
   async login(@Body() signInDto: LoginDto): Promise<ProfileDto> {
     const requestUUID = createUUID();
 
-    this._logger.log(`[${requestUUID}] GET /auth/login`);
+    this._logger.log(`[${requestUUID}] POST /auth/login`);
 
-    return this._accountService.login(requestUUID, signInDto);
+    return this._authApiService.login(requestUUID, signInDto);
   }
 
   /**
@@ -103,8 +103,23 @@ export class AuthApiController {
   async autoLogin(@Headers('Authorization') accessToken: string): Promise<ProfileDto | void> {
     const requestUUID = createUUID();
 
-    this._logger.log(`[${requestUUID}] GET /auth/login/auto`);
+    this._logger.log(`[${requestUUID}] POST /auth/login/auto`);
 
-    return this._accountService.autoLogin(requestUUID, accessToken);
+    return this._authApiService.autoLogin(requestUUID, accessToken);
+  }
+
+  /**
+   * Logout.
+   * @param accessToken
+   * @throws SIGN_REQUIRED
+   * @throws ACCOUNT_NOT_FOUND
+   */
+  @Post('logout')
+  async logout(@Headers('Authorization') accessToken: string): Promise<void> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] POST /auth/logout`);
+
+    await this._authApiService.logout(requestUUID, accessToken);
   }
 }

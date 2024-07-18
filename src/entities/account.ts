@@ -1,5 +1,6 @@
 import { Column, Entity, Generated, OneToMany, PrimaryColumn, Unique } from 'typeorm';
 import { SignedAccount } from './signed-account';
+import { OauthProvider } from '../types/oauth-provider';
 
 /** Account table for users */
 @Entity('account')
@@ -7,10 +8,10 @@ import { SignedAccount } from './signed-account';
 @Unique('account_nickname_unique', ['nickname'])
 export class Account {
   /** Account id */
-  @Generated('increment')
+  @Generated('uuid')
   @PrimaryColumn({
     name: 'id',
-    type: 'bigint',
+    type: 'uuid',
     primaryKeyConstraintName: 'account_pk',
   })
   id: string;
@@ -66,6 +67,22 @@ export class Account {
     type: 'timestamp with time zone',
   })
   createdAt: Date | string;
+
+  /** Oauth provider */
+  @Column({
+    name: 'oauth_provider',
+    type: 'text',
+    nullable: true,
+  })
+  oauthProvider: OauthProvider | null;
+
+  /** Unique id from the oauth provider */
+  @Column({
+    name: 'oauth_id',
+    type: 'text',
+    nullable: true,
+  })
+  oauthId: string | null;
 
   /** Expiry date of account */
   @Column({

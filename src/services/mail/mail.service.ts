@@ -1,7 +1,6 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { createTransport, SentMessageInfo } from 'nodemailer';
 import { configs } from '../../configs/configs';
-import { UNEXPECTED_ERROR } from '../../constants/errors';
 import { compile } from 'handlebars';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -29,17 +28,11 @@ export class MailService {
    * @param parameters - Any parameters to pass to template.
    */
   async sendMail(to: string, subject: string, templateName: string, parameters: any): Promise<SentMessageInfo> {
-    return this._transporter
-      .sendMail({
-        to,
-        subject,
-        html: this._getHtmlTemplate(templateName, parameters),
-      })
-      .catch((e) => {
-        this._logger.error('Failed to send mail: ' + e.toString(), e.stack);
-
-        throw new InternalServerErrorException(UNEXPECTED_ERROR);
-      });
+    return this._transporter.sendMail({
+      to,
+      subject,
+      html: this._getHtmlTemplate(templateName, parameters),
+    });
   }
 
   /**
@@ -49,18 +42,12 @@ export class MailService {
    * @returns Returns parameter replaced template string.
    */
   private _getHtmlTemplate(templateName: string, params: object): string {
-    try {
-      // Get template content.
-      const templateContent = readFileSync(join(configs.paths.emailTemplates, templateName), {
-        encoding: 'utf-8',
-      });
+    // Get template content.
+    const templateContent = readFileSync(join(configs.paths.emailTemplates, templateName), {
+      encoding: 'utf-8',
+    });
 
-      // Compile and replace variables.
-      return compile(templateContent)(params);
-    } catch (e) {
-      this._logger.error('Failed to get html template: ' + e.toString(), e.stack);
-
-      throw new InternalServerErrorException(UNEXPECTED_ERROR);
-    }
+    // Compile and replace variables.
+    return compile(templateContent)(params);
   }
 }

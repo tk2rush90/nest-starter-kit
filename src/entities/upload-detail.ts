@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Generated, PrimaryColumn } from 'typeorm';
+import { Column, Entity, Generated, PrimaryColumn } from 'typeorm';
 
 /** Entity that contains detail of uploaded files */
 @Entity('upload_detail')
@@ -7,7 +7,8 @@ export class UploadDetail {
   @Generated('uuid')
   @PrimaryColumn({
     name: 'id',
-    type: 'text',
+    type: 'uuid',
+    primaryKeyConstraintName: 'upload_detail_pk',
   })
   id: string;
 
@@ -40,10 +41,9 @@ export class UploadDetail {
   mimetype: string;
 
   /** Created date */
-  @CreateDateColumn({
+  @Column({
     name: 'created_at',
     type: 'timestamp with time zone',
-    default: new Date(),
   })
   createdAt: Date | string;
 }

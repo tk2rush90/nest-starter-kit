@@ -10,6 +10,7 @@ import { ProfileDto } from '../../dtos/profile-dto';
 import { SignedAccountService } from '../signed-account/signed-account.service';
 import { createSalt, encrypt } from '../../utils/crypto';
 import { verifyToken } from '../../utils/jwt';
+import { OauthProvider } from '../../types/oauth-provider';
 
 /** A service that contains database related features for `Account` */
 @Injectable()
@@ -111,10 +112,18 @@ export class AccountService {
    * Random `salt` for account is created, too.
    * @param email - Email of account.
    * @param nickname - Nickname of account.
+   * @param oauthProvider
+   * @param oauthId
    * @param entityManager - `EntityManager` when using transaction.
    * @returns Returns created `Account`.
    */
-  async createAccount(email: string, nickname: string, entityManager?: EntityManager): Promise<Account> {
+  async createAccount(
+    email: string,
+    nickname: string,
+    oauthProvider?: OauthProvider,
+    oauthId?: string,
+    entityManager?: EntityManager,
+  ): Promise<Account> {
     // Get target repository.
     const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
@@ -125,6 +134,8 @@ export class AccountService {
       email,
       nickname,
       salt,
+      oauthProvider,
+      oauthId,
       accountExpiredAt: new Date(Date.now() + YEAR),
       createdAt: new Date(),
     });
@@ -292,6 +303,39 @@ export class AccountService {
     await this._accountRepository.delete({
       id: account.id,
     });
+  }
+
+  /**
+   * Find an account with oauth.
+   * @param oauthProvider
+   * @param oauthId
+   */
+  async findAccountByOauth(oauthProvider: OauthProvider, oauthId: string): Promise<Account | null> {
+    return this._accountRepository.findOne({
+      where: {
+        oauthProvider,
+        oauthId,
+      },
+    });
+  }
+
+  /**
+   * Get an account with oauth.
+   * @param oauthProvider
+   * @param oauthId
+   * @throws ACCOUNT_NOT_FOUND
+   */
+  async getAccountByOauth(oauthProvider: OauthProvider, oauthId: string): Promise<Account> {
+    return getOneWrapper(
+      this._accountRepository,
+      {
+        where: {
+          oauthProvider,
+          oauthId,
+        },
+      },
+      ACCOUNT_NOT_FOUND,
+    );
   }
 
   /**

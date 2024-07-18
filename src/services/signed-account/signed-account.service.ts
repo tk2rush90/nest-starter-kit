@@ -19,7 +19,7 @@ export class SignedAccountService {
    * @param account - `Account` to mark as signed.
    * @param entityManager - `EntityManager` when using transaction.
    */
-  async markAccountAsSigned(account: Account, entityManager: EntityManager): Promise<string> {
+  async markAccountAsSigned(account: Account, entityManager?: EntityManager): Promise<string> {
     // Get repository.
     const signedAccountRepository = getTargetRepository(this._signedAccountRepository, entityManager);
 

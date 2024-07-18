@@ -9,6 +9,7 @@ import { AccountDto } from '../../dtos/account-dto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { createUUID } from '../../utils/crypto';
 import { AuthApiService } from '../../services/auth-api/auth-api.service';
+import { GoogleIdTokenDto } from '../../dtos/google-id-token-dto';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
@@ -121,5 +122,31 @@ export class AuthApiController {
     this._logger.log(`[${requestUUID}] POST /auth/logout`);
 
     await this._authApiService.logout(requestUUID, accessToken);
+  }
+
+  /**
+   * Join by google.
+   * @param googleIdTokenDto
+   */
+  @Post('join/google')
+  async joinByGoogle(@Body() googleIdTokenDto: GoogleIdTokenDto): Promise<AccountDto> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] POST /auth/join/google`);
+
+    return this._authApiService.joinByGoogle(requestUUID, googleIdTokenDto);
+  }
+
+  /**
+   * Login by google.
+   * @param googleIdTokenDto
+   */
+  @Post('login/google')
+  async loginByGoogle(@Body() googleIdTokenDto: GoogleIdTokenDto): Promise<ProfileDto> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] POST /auth/login/google`);
+
+    return this._authApiService.loginByGoogle(requestUUID, googleIdTokenDto);
   }
 }

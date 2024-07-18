@@ -9,10 +9,10 @@ import { Account } from './account';
 @Index('signed_account_unique_index', ['accountId', 'accessToken'], { unique: true })
 export class SignedAccount {
   /** Signed account id */
-  @Generated('increment')
+  @Generated('uuid')
   @PrimaryColumn({
     name: 'id',
-    type: 'bigint',
+    type: 'uuid',
     primaryKeyConstraintName: 'signed_account_pk',
   })
   id: string;

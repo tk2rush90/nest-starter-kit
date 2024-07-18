@@ -1,5 +1,11 @@
-import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { DUPLICATED_EMAIL, DUPLICATED_NICKNAME, SIGN_REQUIRED } from '../../constants/errors';
+import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  DUPLICATED_EMAIL,
+  DUPLICATED_NICKNAME,
+  JOINED_ACCOUNT,
+  NOT_VERIFIED_GOOGLE_ACCOUNT,
+  SIGN_REQUIRED,
+} from '../../constants/errors';
 import { JoinDto } from '../../dtos/join-dto';
 import { AccountDto } from '../../dtos/account-dto';
 import { OtpExpiredAtDto } from '../../dtos/otp-expired-at-dto';
@@ -10,6 +16,11 @@ import { AccountService } from '../account/account.service';
 import { SignedAccountService } from '../signed-account/signed-account.service';
 import { EntityManager } from 'typeorm';
 import { MailService } from '../mail/mail.service';
+import { GoogleIdTokenDto } from '../../dtos/google-id-token-dto';
+import { OauthService } from '../oauth/oauth.service';
+import { Account } from '../../entities/account';
+import { OauthProvider } from '../../types/oauth-provider';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthApiService {
@@ -18,6 +29,7 @@ export class AuthApiService {
   constructor(
     private readonly _entityManager: EntityManager,
     private readonly _mailService: MailService,
+    private readonly _oauthService: OauthService,
     private readonly _accountService: AccountService,
     private readonly _signedAccountService: SignedAccountService,
   ) {}
@@ -36,7 +48,7 @@ export class AuthApiService {
 
       throw new ConflictException(DUPLICATED_EMAIL);
     } else {
-      this._logger.error(`[${requestUUID}] Email duplication checked: ${email}`);
+      this._logger.log(`[${requestUUID}] Email duplication checked: ${email}`);
     }
   }
 
@@ -54,7 +66,7 @@ export class AuthApiService {
 
       throw new ConflictException(DUPLICATED_NICKNAME);
     } else {
-      this._logger.error(`[${requestUUID}] Nickname duplication checked: ${nickname}`);
+      this._logger.log(`[${requestUUID}] Nickname duplication checked: ${nickname}`);
     }
   }
 
@@ -68,29 +80,9 @@ export class AuthApiService {
    * @throws METHOD_NOT_IMPLEMENTED
    */
   async join(requestUUID: string, { email, nickname }: JoinDto): Promise<AccountDto> {
-    await this.checkEmailDuplicated(requestUUID, email);
+    const account = await this._createNewAccount(requestUUID, email, nickname);
 
-    await this.checkNicknameDuplicated(requestUUID, nickname);
-
-    return this._entityManager
-      .transaction(async (_entityManager) => {
-        const account = await this._accountService.createAccount(email, nickname, _entityManager);
-
-        this._logger.log(`[${requestUUID}] Account is created: ${account.id}`);
-
-        await this._mailService.sendMail(email, '계정이 생성 되었습니다', 'welcome.html', {
-          nickname,
-        });
-
-        this._logger.log(`[${requestUUID}] Welcome email is sent: ${email}`);
-
-        return this._accountService.toAccountDto(account);
-      })
-      .catch((e) => {
-        this._logger.error(`[${requestUUID}] Error while joining: ${e.toString()}`, e.stack);
-
-        throw e;
-      });
+    return this._accountService.toAccountDto(account);
   }
 
   /**
@@ -229,5 +221,111 @@ export class AuthApiService {
       // Don't throw exception to process logout from the client.
       this._logger.error(`[${requestUUID}] Error while logging out: ${e.toString()}`, e.stack);
     }
+  }
+
+  /**
+   * Join by google.
+   * @param requestUUID
+   * @param nickname
+   * @param idToken
+   * @throws JOINED_ACCOUNT
+   * @throws DUPLICATED_EMAIL
+   * @throws DUPLICATED_NICKNAME
+   */
+  async joinByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<AccountDto> {
+    const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
+
+    if (!tokenPayload.email_verified) {
+      this._logger.error('Google email is not verified');
+
+      throw new BadRequestException(NOT_VERIFIED_GOOGLE_ACCOUNT);
+    }
+
+    const existingAccount = await this._accountService.findAccountByOauth('google', tokenPayload.sub);
+
+    if (existingAccount) {
+      this._logger.error('Account is duplicated with Google');
+
+      throw new ConflictException(JOINED_ACCOUNT);
+    }
+
+    const nickname =
+      tokenPayload.name.replace(/\s/gm, '').substring(0, 8) + randomUUID().split('-').pop().substring(0, 5);
+
+    this._logger.log(`[${requestUUID}] Random nickname is created: ${nickname}`);
+
+    const account = await this._createNewAccount(requestUUID, tokenPayload.email, nickname, 'google', tokenPayload.sub);
+
+    return this._accountService.toAccountDto(account);
+  }
+
+  /**
+   * Login by google.
+   * @param requestUUID
+   * @param idToken
+   * @throws ACCOUNT_NOT_FOUND
+   */
+  async loginByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<ProfileDto> {
+    const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
+
+    const account = await this._accountService.getAccountByOauth('google', tokenPayload.sub);
+
+    this._logger.log(`[${requestUUID}] Account is found by google: ${account.id}`);
+
+    // Mark `Account` as signed.
+    const accessToken = await this._signedAccountService.markAccountAsSigned(account);
+
+    this._logger.log(`[${requestUUID}] Account is marked as signed`);
+
+    // Convert and return.
+    return this._accountService.toProfileDto(account, accessToken);
+  }
+
+  /**
+   * Create a new account.
+   * @param requestUUID
+   * @param email
+   * @param nickname
+   * @param oauthProvider
+   * @param oauthId
+   * @throws DUPLICATED_EMAIL
+   * @throws DUPLICATED_NICKNAME
+   */
+  private async _createNewAccount(
+    requestUUID: string,
+    email: string,
+    nickname: string,
+    oauthProvider?: OauthProvider,
+    oauthId?: string,
+  ): Promise<Account> {
+    await this.checkEmailDuplicated(requestUUID, email);
+
+    await this.checkNicknameDuplicated(requestUUID, nickname);
+
+    return this._entityManager
+      .transaction(async (_entityManager) => {
+        const account = await this._accountService.createAccount(
+          email,
+          nickname,
+          oauthProvider,
+          oauthId,
+          _entityManager,
+        );
+
+        this._logger.log(`[${requestUUID}] Account is created: ${account.id}`);
+
+        await this._mailService.sendMail(email, '계정이 생성 되었습니다', 'welcome.html', {
+          nickname,
+        });
+
+        this._logger.log(`[${requestUUID}] Welcome email is sent: ${email}`);
+
+        return account;
+      })
+      .catch((e) => {
+        this._logger.error(`[${requestUUID}] Error while joining: ${e.toString()}`, e.stack);
+
+        throw e;
+      });
   }
 }

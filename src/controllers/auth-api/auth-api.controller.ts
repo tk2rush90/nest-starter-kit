@@ -10,6 +10,7 @@ import { AuthGuard } from '../../guards/auth/auth.guard';
 import { createUUID } from '../../utils/crypto';
 import { AuthApiService } from '../../services/auth-api/auth-api.service';
 import { GoogleIdTokenDto } from '../../dtos/google-id-token-dto';
+import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
@@ -148,5 +149,18 @@ export class AuthApiController {
     this._logger.log(`[${requestUUID}] POST /auth/login/google`);
 
     return this._authApiService.loginByGoogle(requestUUID, googleIdTokenDto);
+  }
+
+  /**
+   * Delete account.
+   * @param accessToken
+   */
+  @Post('account/delete')
+  async deleteAccount(@Headers('Authorization') accessToken: string): Promise<DeletedAccountDto> {
+    const requestUUID = createUUID();
+
+    this._logger.log(`[${requestUUID}] POST /auth/account/delete`);
+
+    return this._authApiService.deleteAccount(requestUUID, accessToken);
   }
 }

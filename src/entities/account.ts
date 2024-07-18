@@ -61,13 +61,6 @@ export class Account {
   })
   avatarId: string | null;
 
-  /** Account created date */
-  @Column({
-    name: 'created_at',
-    type: 'timestamp with time zone',
-  })
-  createdAt: Date | string;
-
   /** Oauth provider */
   @Column({
     name: 'oauth_provider',
@@ -83,6 +76,13 @@ export class Account {
     nullable: true,
   })
   oauthId: string | null;
+
+  /** Account created date */
+  @Column({
+    name: 'created_at',
+    type: 'timestamp with time zone',
+  })
+  createdAt: Date | string;
 
   /** Expiry date of account */
   @Column({

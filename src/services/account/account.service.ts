@@ -11,6 +11,8 @@ import { SignedAccountService } from '../signed-account/signed-account.service';
 import { createSalt, encrypt } from '../../utils/crypto';
 import { verifyToken } from '../../utils/jwt';
 import { OauthProvider } from '../../types/oauth-provider';
+import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
+import { AccountJsonDto } from '../../dtos/account-json-dto';
 
 /** A service that contains database related features for `Account` */
 @Injectable()
@@ -70,7 +72,6 @@ export class AccountService {
   /**
    * Get an `Account` by access token.
    * @param accessToken - Access token to get `Account`.
-   * @returns Returns `Account`.
    */
   async getAccountByAccessToken(accessToken: string): Promise<Account> {
     // Verify access token.
@@ -88,7 +89,6 @@ export class AccountService {
    * Get account by id.
    * When account not found, it throws exception.
    * @param id - Account id to get.
-   * @returns Returns an `Account`.
    */
   async getAccountById(id: string): Promise<Account> {
     // Find account.
@@ -115,7 +115,6 @@ export class AccountService {
    * @param oauthProvider
    * @param oauthId
    * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns created `Account`.
    */
   async createAccount(
     email: string,
@@ -186,7 +185,6 @@ export class AccountService {
    * @param account - `Account` to save OTP.
    * @param otp - OTP which is required to sign in.
    * @param entityManager - `EntityManager` when using transaction.
-   * @returns Returns expiry date.
    */
   async saveOtp(account: Account, otp: string, entityManager?: EntityManager): Promise<Date> {
     // Get target repository.
@@ -275,7 +273,6 @@ export class AccountService {
    * When validation failed, it throws proper exceptions.
    * After all validations passed, updates expiry date of `SignedAccount`.
    * @param accessToken - Access token to validate.
-   * @returns Returns validated account.
    */
   async validateAccessToken(accessToken: string): Promise<Account> {
     const account = await this.getAccountByAccessToken(accessToken);
@@ -297,10 +294,13 @@ export class AccountService {
    * Delete account.
    * Files related with data will be deleted automatically by scheduler.
    * @param account - Account to delete.
+   * @param entityManager
    */
-  async deleteAccount(account: Account): Promise<void> {
+  async deleteAccount(account: Account, entityManager?: EntityManager): Promise<void> {
+    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
+
     // Delete account.
-    await this._accountRepository.delete({
+    await accountRepository.delete({
       id: account.id,
     });
   }
@@ -341,7 +341,6 @@ export class AccountService {
   /**
    * Convert `Account` to `AccountDto`.
    * @param account - `Account` to convert.
-   * @returns Returns `AccountDto`.
    */
   toAccountDto(account: Account): AccountDto {
     return new AccountDto({
@@ -354,7 +353,6 @@ export class AccountService {
    * Convert `Account` to `ProfileDto`.
    * @param account - `Account` to convert.
    * @param accessToken - Access token to set to `ProfileDto`.
-   * @returns Returns `ProfileDto`.
    */
   toProfileDto(account: Account, accessToken: string): ProfileDto {
     // Create `ProfileDto` and return.
@@ -363,6 +361,39 @@ export class AccountService {
       avatarId: account.avatarId,
       nickname: account.nickname,
       accessToken,
+    });
+  }
+
+  /**
+   * To deleted account.
+   * @param account
+   */
+  toDeletedAccountDto(account: Account): DeletedAccountDto {
+    return new DeletedAccountDto({
+      ...this.toAccountDto(account),
+      email: account.email,
+      oauthProvider: account.oauthProvider,
+      oauthId: account.oauthId,
+    });
+  }
+
+  /**
+   * To account json dto.
+   * @param account
+   */
+  toAccountJsonDto(account: Account): AccountJsonDto {
+    return new AccountJsonDto({
+      id: account.id,
+      salt: account.salt,
+      email: account.email,
+      nickname: account.nickname,
+      otp: account.otp,
+      otpExpiredAt: account.otpExpiredAt,
+      avatarId: account.avatarId,
+      oauthProvider: account.oauthProvider,
+      oauthId: account.oauthId,
+      accountExpiredAt: account.accountExpiredAt,
+      createdAt: account.createdAt,
     });
   }
 }

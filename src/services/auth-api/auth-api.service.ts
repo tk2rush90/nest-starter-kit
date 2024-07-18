@@ -21,6 +21,8 @@ import { OauthService } from '../oauth/oauth.service';
 import { Account } from '../../entities/account';
 import { OauthProvider } from '../../types/oauth-provider';
 import { randomUUID } from 'crypto';
+import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
+import { ArchivedAccountService } from '../archived-account/archived-account.service';
 
 @Injectable()
 export class AuthApiService {
@@ -32,6 +34,7 @@ export class AuthApiService {
     private readonly _oauthService: OauthService,
     private readonly _accountService: AccountService,
     private readonly _signedAccountService: SignedAccountService,
+    private readonly _archivedAccountService: ArchivedAccountService,
   ) {}
 
   /**
@@ -279,6 +282,43 @@ export class AuthApiService {
 
     // Convert and return.
     return this._accountService.toProfileDto(account, accessToken);
+  }
+
+  /**
+   * Delete account.
+   * @param requestUUID
+   * @param accessToken
+   * @throws SIGN_REQUIRED
+   * @throws ACCOUNT_NOT_FOUND
+   */
+  async deleteAccount(requestUUID: string, accessToken: string): Promise<DeletedAccountDto> {
+    const account = await this._accountService.validateAccessToken(accessToken);
+
+    this._logger.log(`[${requestUUID}] Access token is validated: ${account.id}`);
+
+    const deletedAccount = this._accountService.toDeletedAccountDto(account);
+
+    await this._entityManager
+      .transaction(async (_entityManager) => {
+        const archivedAccount = await this._archivedAccountService.createArchivedAccount(account, _entityManager);
+
+        this._logger.log(`[${requestUUID}] Archived account is created: ${archivedAccount.id}`);
+
+        await this._accountService.deleteAccount(account, _entityManager);
+
+        this._logger.log(`[${requestUUID}] Account is deleted: ${deletedAccount.id}`);
+
+        await this._mailService.sendMail(deletedAccount.email, '계정이 삭제 되었습니다', 'delete-account.html', {
+          nickname: deletedAccount.nickname,
+        });
+      })
+      .catch((e) => {
+        this._logger.error(`[${requestUUID}] Error while deleting account: ${e.toString()}`, e.stack);
+
+        throw e;
+      });
+
+    return deletedAccount;
   }
 
   /**

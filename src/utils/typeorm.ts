@@ -1,7 +1,15 @@
-import { DeepPartial, EntityManager, FindOneOptions, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
+import {
+  Brackets,
+  DeepPartial,
+  EntityManager,
+  FindOneOptions,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { PagingResultDto } from '../dtos/paging-result-dto';
 import { OrderDirection } from '../types/order-direction';
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 
 /**
  * Get proper target repository.
@@ -85,69 +93,36 @@ export async function cursorPaginate<E extends ObjectLiteral>({
   take,
   cursorBuilder,
 }: CursorPaginateOptions<E>): Promise<PagingResultDto<E>> {
+  const logger = new Logger('cursorPaginate');
+
+  const targetOrderDirection = previousCursor ? getReversedOrderDirection(orderDirection) : orderDirection;
+
+  // Add orders.
+  for (let i = 0; i < keyColumns.length; i++) {
+    const _keyColumn = keyColumns[i];
+
+    selectQueryBuilder.addOrderBy(_keyColumn, targetOrderDirection);
+  }
+
   // Clone after ordered.
   const previousSelectQueryBuilder = selectQueryBuilder.clone();
 
   const nextSelectQueryBuilder = selectQueryBuilder.clone();
 
-  let data: E[] = [];
-
   selectQueryBuilder.take(take);
 
   if (nextCursor) {
-    const cursorValues = decodeCursor(nextCursor);
-
-    const comparisonSign = getComparisonSign(orderDirection);
-
-    // Set cursors.
-    if (cursorValues.length > 0) {
-      // Add orders.
-      for (let i = 0; i < keyColumns.length; i++) {
-        const _keyColumn = keyColumns[i];
-
-        selectQueryBuilder.addOrderBy(_keyColumn, orderDirection);
-      }
-
-      const parametersAndKeys = createParametersAndKeys(cursorValues);
-
-      selectQueryBuilder.andWhere(
-        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
-        parametersAndKeys.parameters,
-      );
-    }
-
-    data = await selectQueryBuilder.getMany();
+    addCompositeColumnWhere(selectQueryBuilder, keyColumns, nextCursor, targetOrderDirection);
   } else if (previousCursor) {
-    const cursorValues = decodeCursor(previousCursor);
-
-    const reversedOrderDirection = getReversedOrderDirection(orderDirection);
-
-    const comparisonSign = getComparisonSign(reversedOrderDirection);
-
-    // Set cursors.
-    if (cursorValues.length > 0) {
-      // Add orders.
-      for (let i = 0; i < keyColumns.length; i++) {
-        const _keyColumn = keyColumns[i];
-
-        selectQueryBuilder.addOrderBy(_keyColumn, reversedOrderDirection);
-      }
-
-      const parametersAndKeys = createParametersAndKeys(cursorValues);
-
-      selectQueryBuilder.andWhere(
-        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
-        parametersAndKeys.parameters,
-      );
-    }
-
-    data = await selectQueryBuilder.getMany();
-
-    // Reverse.
-    data.reverse();
-  } else {
-    data = await selectQueryBuilder.getMany();
+    addCompositeColumnWhere(selectQueryBuilder, keyColumns, previousCursor, targetOrderDirection);
   }
+
+  const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
+
+  logger.log('Query: ' + queryAndParameters[0]);
+  logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
+
+  const data = await selectQueryBuilder.getMany();
 
   // Create cursor for first data to get previous cursor.
   const newPreviousCursorValues = data[0] ? cursorBuilder(data[0]) : undefined;
@@ -164,7 +139,7 @@ export async function cursorPaginate<E extends ObjectLiteral>({
     previousCursor: (await hasPreviousData({
       selectQueryBuilder: previousSelectQueryBuilder,
       previousCursor: newPreviousCursor,
-      orderDirection,
+      orderDirection: targetOrderDirection,
       keyColumns,
     }))
       ? newPreviousCursor
@@ -172,7 +147,7 @@ export async function cursorPaginate<E extends ObjectLiteral>({
     nextCursor: (await hasNextData({
       selectQueryBuilder: nextSelectQueryBuilder,
       nextCursor: newNextCursor,
-      orderDirection,
+      orderDirection: targetOrderDirection,
       keyColumns,
     }))
       ? newNextCursor
@@ -193,24 +168,20 @@ async function hasPreviousData<E extends ObjectLiteral>({
   orderDirection,
   keyColumns,
 }: Omit<CursorPaginateOptions<E>, 'take' | 'cursorBuilder'>): Promise<boolean> {
+  const logger = new Logger('hasPreviousData');
+
   // Set cursors.
   if (previousCursor) {
-    const cursorValues = decodeCursor(previousCursor);
+    addCompositeColumnWhere(selectQueryBuilder, keyColumns, previousCursor, orderDirection);
 
-    if (cursorValues.length > 0) {
-      const comparisonSign = getComparisonSign(getReversedOrderDirection(orderDirection));
+    const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
 
-      const parametersAndKeys = createParametersAndKeys(cursorValues);
+    logger.log('Query: ' + queryAndParameters[0]);
+    logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
 
-      selectQueryBuilder.andWhere(
-        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
-        parametersAndKeys.parameters,
-      );
+    const previousCursorData = await selectQueryBuilder.getOne();
 
-      const previousCursorData = await selectQueryBuilder.getOne();
-
-      return !!previousCursorData;
-    }
+    return !!previousCursorData;
   }
 
   return false;
@@ -229,27 +200,73 @@ async function hasNextData<E extends ObjectLiteral>({
   orderDirection,
   keyColumns,
 }: Omit<CursorPaginateOptions<E>, 'take' | 'cursorBuilder'>): Promise<boolean> {
+  const logger = new Logger('hasNextData');
+
   // Set cursors.
   if (nextCursor) {
-    const cursorValues = decodeCursor(nextCursor);
+    addCompositeColumnWhere(selectQueryBuilder, keyColumns, nextCursor, orderDirection);
 
-    if (cursorValues.length > 0) {
-      const comparisonSign = getComparisonSign(orderDirection);
+    const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
 
-      const parametersAndKeys = createParametersAndKeys(cursorValues);
+    logger.log('Query: ' + queryAndParameters[0]);
+    logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
 
-      selectQueryBuilder.andWhere(
-        `(${keyColumns.join(',')}) ${comparisonSign} (${parametersAndKeys.parameterKeys.join(',')})`,
-        parametersAndKeys.parameters,
-      );
+    const nextCursorData = await selectQueryBuilder.getOne();
 
-      const nextCursorData = await selectQueryBuilder.getOne();
-
-      return !!nextCursorData;
-    }
+    return !!nextCursorData;
   }
 
   return false;
+}
+
+/**
+ * Add where condition to selectQueryBuilder for composite columns.
+ * @param selectQueryBuilder
+ * @param keyColumns
+ * @param cursor
+ * @param orderDirection
+ */
+function addCompositeColumnWhere<D extends ObjectLiteral>(
+  selectQueryBuilder: SelectQueryBuilder<D>,
+  keyColumns: string[],
+  cursor: string,
+  orderDirection: OrderDirection,
+): void {
+  if (cursor) {
+    const cursorValues = decodeCursor(cursor);
+
+    const comparisonSign = getComparisonSign(orderDirection);
+
+    const parametersAndKeys = createParametersAndKeys(cursorValues);
+
+    selectQueryBuilder.andWhere(
+      new Brackets((queryBuilder) => {
+        for (let i = 0; i < keyColumns.length; i++) {
+          const _keyColumns = keyColumns.slice(0, i + 1);
+
+          const _parameterKeys = parametersAndKeys.parameterKeys.slice(0, i + 1);
+
+          queryBuilder.orWhere(
+            new Brackets((_queryBuilder) => {
+              for (let j = 0; j < _keyColumns.length; j++) {
+                const _keyColumn = _keyColumns[j];
+
+                const _parameterKey = _parameterKeys[j];
+
+                if (_keyColumns.length - 1 === j) {
+                  _queryBuilder.andWhere(`${_keyColumn} ${comparisonSign} ${_parameterKey}`);
+                } else {
+                  _queryBuilder.andWhere(`${_keyColumn} = ${_parameterKey}`);
+                }
+              }
+            }),
+          );
+        }
+      }),
+    );
+
+    selectQueryBuilder.setParameters(parametersAndKeys.parameters);
+  }
 }
 
 /**

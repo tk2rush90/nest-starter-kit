@@ -119,8 +119,8 @@ export async function cursorPaginate<E extends ObjectLiteral>({
 
   const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
 
-  logger.log('Query: ' + queryAndParameters[0]);
-  logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
+  logger.debug('Query: ' + queryAndParameters[0]);
+  logger.debug('Parameters: ' + JSON.stringify(queryAndParameters[1]));
 
   const data = await selectQueryBuilder.getMany();
 
@@ -176,8 +176,8 @@ async function hasPreviousData<E extends ObjectLiteral>({
 
     const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
 
-    logger.log('Query: ' + queryAndParameters[0]);
-    logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
+    logger.debug('Query: ' + queryAndParameters[0]);
+    logger.debug('Parameters: ' + JSON.stringify(queryAndParameters[1]));
 
     const previousCursorData = await selectQueryBuilder.getOne();
 
@@ -208,8 +208,8 @@ async function hasNextData<E extends ObjectLiteral>({
 
     const queryAndParameters = selectQueryBuilder.getQueryAndParameters();
 
-    logger.log('Query: ' + queryAndParameters[0]);
-    logger.log('Parameters: ' + JSON.stringify(queryAndParameters[1]));
+    logger.debug('Query: ' + queryAndParameters[0]);
+    logger.debug('Parameters: ' + JSON.stringify(queryAndParameters[1]));
 
     const nextCursorData = await selectQueryBuilder.getOne();
 

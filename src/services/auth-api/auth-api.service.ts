@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger, Unauthorize
 import {
   DUPLICATED_EMAIL,
   DUPLICATED_NICKNAME,
+  INVALID_TOKEN_PAYLOAD,
   JOINED_ACCOUNT,
   NOT_VERIFIED_GOOGLE_ACCOUNT,
   SIGN_REQUIRED,
@@ -238,6 +239,14 @@ export class AuthApiService {
   async joinByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<AccountDto> {
     const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
 
+    if (!tokenPayload) {
+      throw new UnauthorizedException(INVALID_TOKEN_PAYLOAD);
+    }
+
+    if (!tokenPayload.name || !tokenPayload.email) {
+      throw new BadRequestException(INVALID_TOKEN_PAYLOAD);
+    }
+
     if (!tokenPayload.email_verified) {
       this._logger.error('Google email is not verified');
 
@@ -253,7 +262,7 @@ export class AuthApiService {
     }
 
     const nickname =
-      tokenPayload.name.replace(/\s/gm, '').substring(0, 8) + randomUUID().split('-').pop().substring(0, 5);
+      tokenPayload.name.replace(/\s/gm, '').substring(0, 8) + randomUUID().split('-').pop()!.substring(0, 5);
 
     this._logger.log(`[${requestUUID}] Random nickname is created: ${nickname}`);
 

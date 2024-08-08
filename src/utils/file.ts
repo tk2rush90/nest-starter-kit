@@ -6,7 +6,21 @@ import * as FluentFFMpeg from 'fluent-ffmpeg';
 import { FfprobeData } from 'fluent-ffmpeg';
 import { basename, extname, join } from 'path';
 import { configs } from '../configs/configs';
-import { existsSync, unlinkSync } from 'fs';
+import { existsSync, statSync, unlinkSync, writeFileSync } from 'fs';
+
+export function createFile(filePath: string, buffer: Buffer): void {
+  writeFileSync(join(filePath), buffer);
+}
+
+export function getFileSize(filePath: string): number {
+  if (existsSync(filePath)) {
+    const stat = statSync(filePath);
+
+    return stat.size;
+  } else {
+    return 0;
+  }
+}
 
 /**
  * Delete file if exists.

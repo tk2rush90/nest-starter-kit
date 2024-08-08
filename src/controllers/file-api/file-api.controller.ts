@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -15,13 +16,11 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { MB } from '../../constants/units';
-import { configs } from '../../configs/configs';
-import { diskStorage } from 'multer';
 import { Request, Response } from 'express';
 import { createUUID } from '../../utils/crypto';
-import { extname } from 'path';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { FileApiService } from '../../services/file-api/file-api.service';
+import { UploadFilesDto } from '../../dtos/upload-files-dto';
 
 @Controller('file')
 export class FileApiController {
@@ -52,21 +51,11 @@ export class FileApiController {
   /**
    * Upload files and return uploaded ids.
    * @param files
+   * @param uploadFilesDto
    */
   @Post('upload')
   @UseGuards(AuthGuard)
-  @UseInterceptors(
-    FilesInterceptor('files', undefined, {
-      storage: diskStorage({
-        destination: configs.paths.files,
-        filename(req: Request, file: Express.Multer.File, callback: (error: Error | null, filename: string) => void) {
-          const randomFilename = createUUID() + extname(file.originalname); // Keep extension.
-
-          callback(null, randomFilename);
-        },
-      }),
-    }),
-  )
+  @UseInterceptors(FilesInterceptor('files'))
   async uploadFiles(
     @UploadedFiles(
       new ParseFilePipeBuilder()
@@ -80,12 +69,13 @@ export class FileApiController {
         .build(),
     )
     files: Express.Multer.File[],
+    @Body() uploadFilesDto: UploadFilesDto,
   ): Promise<string[]> {
     const requestUUID = createUUID();
 
     this._logger.log(`[${requestUUID}] POST /file/upload`);
 
-    return this._fileApiService.uploadFiles(requestUUID, files);
+    return this._fileApiService.uploadFiles(requestUUID, files, uploadFilesDto);
   }
 
   /**

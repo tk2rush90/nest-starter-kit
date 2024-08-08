@@ -1,12 +1,15 @@
 import { Injectable, Logger, StreamableFile } from '@nestjs/common';
 import { UploadDetailService } from '../upload-detail/upload-detail.service';
-import { join } from 'path';
+import { extname, join } from 'path';
 import { toInteger } from 'lodash';
 import { createReadStream, readFileSync } from 'fs';
 import { Request, Response } from 'express';
 import { UploadDetail } from '../../entities/upload-detail';
 import { EntityManager } from 'typeorm';
-import { deleteFileIfExists } from '../../utils/file';
+import { createFile, deleteFileIfExists, getFileSize, resizeImageBuffer } from '../../utils/file';
+import { UploadFilesDto } from '../../dtos/upload-files-dto';
+import { configs } from '../../configs/configs';
+import { createUUID } from '../../utils/crypto';
 
 @Injectable()
 export class FileApiService {
@@ -79,13 +82,27 @@ export class FileApiService {
    * After created, return ids of created details.
    * @param requestUUID
    * @param files
+   * @param width
    */
-  async uploadFiles(requestUUID: string, files: Express.Multer.File[]): Promise<string[]> {
+  async uploadFiles(requestUUID: string, files: Express.Multer.File[], { width }: UploadFilesDto): Promise<string[]> {
     const uploadedDetails: UploadDetail[] = [];
 
     await this._entityManager
       .transaction(async (_entityManager) => {
         for (const _file of files) {
+          _file.destination = configs.paths.files;
+          _file.filename = createUUID() + extname(_file.originalname); // Keep extension.
+
+          const filePath = join(_file.destination, _file.filename);
+
+          if (_file.mimetype.startsWith('image') && width) {
+            _file.buffer = await resizeImageBuffer(_file.buffer, width);
+          }
+
+          createFile(filePath, _file.buffer);
+
+          _file.size = getFileSize(filePath);
+
           uploadedDetails.push(await this._uploadedDetailService.createUploadDetail(_file, _entityManager));
         }
 

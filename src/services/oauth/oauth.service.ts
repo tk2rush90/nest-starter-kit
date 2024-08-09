@@ -9,7 +9,7 @@ export class OauthService {
    * Verify google id token.
    * @param idToken
    */
-  async verifyGoogleIdToken(idToken: string): Promise<TokenPayload> {
+  async verifyGoogleIdToken(idToken: string): Promise<TokenPayload | undefined> {
     const client = new google.auth.OAuth2(
       configs.oauth.google.clientId,
       configs.oauth.google.clientSecret,

@@ -17,7 +17,7 @@ export class FileTypeValidationPipe implements PipeTransform {
 
   transform(
     fileOrFiles: Express.Multer.File | Express.Multer.File[] | undefined,
-  ): Express.Multer.File | Express.Multer.File[] {
+  ): Express.Multer.File | Express.Multer.File[] | undefined {
     if (fileOrFiles instanceof Array) {
       fileOrFiles.forEach((_file) => this._validateTypes(_file));
     } else if (fileOrFiles) {

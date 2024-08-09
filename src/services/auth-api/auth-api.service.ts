@@ -280,6 +280,10 @@ export class AuthApiService {
   async loginByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<ProfileDto> {
     const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
 
+    if (!tokenPayload) {
+      throw new UnauthorizedException(INVALID_TOKEN_PAYLOAD);
+    }
+
     const account = await this._accountService.getAccountByOauth('google', tokenPayload.sub);
 
     this._logger.log(`[${requestUUID}] Account is found by google: ${account.id}`);

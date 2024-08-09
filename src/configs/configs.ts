@@ -38,8 +38,9 @@ export const configs = {
   },
   // Other configurations.
   etc: {
-    production: process.env.PRODUCTION.toLowerCase() === 'true',
+    production: process.env.PRODUCTION?.toLowerCase() === 'true',
     appName: 'Your-App-Name',
+    clusterMode: process.env.CLUSTER_MODE?.toLowerCase() === 'true',
   },
   // Oauth configurations.
   oauth: {

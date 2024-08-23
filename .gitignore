@@ -6,6 +6,7 @@
 # Logs
 logs
 *.log
+*-audit.json
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*

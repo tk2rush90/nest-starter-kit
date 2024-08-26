@@ -53,13 +53,13 @@ export class Account {
   })
   otpExpiredAt: Date | string | null;
 
-  /** Avatar id of uploaded detail */
+  /** Avatar url */
   @Column({
-    name: 'avatar_id',
+    name: 'avatar_url',
     type: 'text',
     nullable: true,
   })
-  avatarId: string | null;
+  avatarUrl: string | null;
 
   /** Oauth provider */
   @Column({

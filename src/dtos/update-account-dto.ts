@@ -6,9 +6,9 @@ export class UpdateAccountDto {
   @IsNotEmpty()
   nickname: string;
 
-  /** New avatar id */
+  /** New avatar url */
   @IsString()
   @IsNotEmpty()
   @IsOptional()
-  avatarId?: string;
+  avatarUrl?: string;
 }

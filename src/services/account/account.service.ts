@@ -143,10 +143,14 @@ export class AccountService {
   /**
    * Update account avatar id.
    * @param account
-   * @param avatarId
+   * @param avatarUrl
    * @param entityManager
    */
-  async updateAccountAvatarId(account: Account, avatarId: string | null, entityManager?: EntityManager): Promise<void> {
+  async updateAccountAvatarUrl(
+    account: Account,
+    avatarUrl: string | null,
+    entityManager?: EntityManager,
+  ): Promise<void> {
     const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
     await accountRepository.update(
@@ -154,7 +158,7 @@ export class AccountService {
         id: account.id,
       },
       {
-        avatarId,
+        avatarUrl,
       },
     );
   }
@@ -358,7 +362,7 @@ export class AccountService {
     // Create `ProfileDto` and return.
     return new ProfileDto({
       id: account.id,
-      avatarId: account.avatarId,
+      avatarUrl: account.avatarUrl,
       nickname: account.nickname,
       accessToken,
     });
@@ -389,7 +393,7 @@ export class AccountService {
       nickname: account.nickname,
       otp: account.otp,
       otpExpiredAt: account.otpExpiredAt,
-      avatarId: account.avatarId,
+      avatarUrl: account.avatarUrl,
       oauthProvider: account.oauthProvider,
       oauthId: account.oauthId,
       accountExpiredAt: account.accountExpiredAt,

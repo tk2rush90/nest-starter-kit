@@ -31,18 +31,18 @@ export class MeApiService {
   }
 
   /**
-   * Update nickname and avatarId of signed account.
+   * Update nickname and avatarUrl of signed account.
    * @param requestUUID
    * @param accessToken
    * @param nickname
-   * @param avatarId
+   * @param avatarUrl
    * @throws SIGN_REQUIED
    * @throws ACCOUNT_NOT_FOUND
    */
   async updateAccountProfile(
     requestUUID: string,
     accessToken: string,
-    { nickname, avatarId }: UpdateAccountDto,
+    { nickname, avatarUrl }: UpdateAccountDto,
   ): Promise<ProfileDto> {
     const account = await this._accountService.getAccountByAccessToken(accessToken);
 
@@ -62,7 +62,7 @@ export class MeApiService {
 
         this._logger.log(`[${requestUUID}] Nickname is updated`);
 
-        await this._accountService.updateAccountAvatarId(account, avatarId || null, _entityManager);
+        await this._accountService.updateAccountAvatarUrl(account, avatarUrl || null, _entityManager);
 
         this._logger.log(`[${requestUUID}] Avatar id is updated`);
       })

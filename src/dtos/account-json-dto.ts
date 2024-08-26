@@ -7,7 +7,7 @@ export class AccountJsonDto {
   nickname: string;
   otp: string | null;
   otpExpiredAt: Date | string | null;
-  avatarId: string | null;
+  avatarUrl: string | null;
   oauthProvider: OauthProvider | null;
   oauthId: string | null;
   accountExpiredAt: Date | string | null;

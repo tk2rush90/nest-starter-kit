@@ -3,27 +3,21 @@ import {
   DUPLICATED_EMAIL,
   DUPLICATED_NICKNAME,
   INVALID_TOKEN_PAYLOAD,
-  JOINED_ACCOUNT,
   NOT_VERIFIED_GOOGLE_ACCOUNT,
   SIGN_REQUIRED,
 } from '../../constants/errors';
-import { JoinDto } from '../../dtos/join-dto';
-import { AccountDto } from '../../dtos/account-dto';
-import { OtpExpiredAtDto } from '../../dtos/otp-expired-at-dto';
-import { createOtp, encrypt } from '../../utils/crypto';
-import { LoginDto } from '../../dtos/login-dto';
+import { createSalt, encrypt } from '../../utils/crypto';
 import { ProfileDto } from '../../dtos/profile-dto';
 import { AccountService } from '../account/account.service';
 import { SignedAccountService } from '../signed-account/signed-account.service';
 import { EntityManager } from 'typeorm';
 import { MailService } from '../mail/mail.service';
-import { GoogleIdTokenDto } from '../../dtos/google-id-token-dto';
 import { OauthService } from '../oauth/oauth.service';
 import { Account } from '../../entities/account';
 import { OauthProvider } from '../../types/oauth-provider';
-import { randomUUID } from 'crypto';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { ArchivedAccountService } from '../archived-account/archived-account.service';
+import { AccessTokenDto } from '../../dtos/access-token-dto';
 
 @Injectable()
 export class AuthApiService {
@@ -74,104 +68,46 @@ export class AuthApiService {
     }
   }
 
-  /**
-   * Create account to join.
-   * @param requestUUID
-   * @param email
-   * @param nickname
-   * @throws DUPLICATED_EMAIL
-   * @throws DUPLICATED_NICKNAME
-   * @throws METHOD_NOT_IMPLEMENTED
-   */
-  async join(requestUUID: string, { email, nickname }: JoinDto): Promise<AccountDto> {
-    const account = await this._createNewAccount(requestUUID, email, nickname);
+  async startByGoogle({ accessToken }: AccessTokenDto): Promise<ProfileDto> {
+    const tokenPayload = await this._oauthService.verifyGoogleAccessToken(accessToken);
 
-    return this._accountService.toAccountDto(account);
-  }
+    if (!tokenPayload.email_verified) {
+      throw new BadRequestException(NOT_VERIFIED_GOOGLE_ACCOUNT);
+    }
 
-  /**
-   * Send OTP to email.
-   * @param requestUUID
-   * @param email
-   * @throws ACCOUNT_NOT_FOUND
-   * @throws
-   */
-  async sendOtp(requestUUID: string, email: string): Promise<OtpExpiredAtDto> {
-    // Get account.
-    const account = await this._accountService.getAccountByEmail(email);
+    if (!tokenPayload.name || !tokenPayload.email) {
+      throw new BadRequestException(INVALID_TOKEN_PAYLOAD);
+    }
 
-    this._logger.log(`[${requestUUID}] Account is found by email: ${email}`);
+    let account = await this._accountService.findAccountByOauth('google', tokenPayload.sub);
 
-    // Create OTP.
-    const otp = createOtp();
+    // when account not found, create new one
+    if (!account) {
+      let nickname = tokenPayload.name.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
 
-    this._logger.log(`[${requestUUID}]: OTP is created`);
+      while (true) {
+        const duplicated = await this._accountService.isNicknameDuplicated(nickname);
 
-    // Start transaction to send OTP.
-    // When email sending is failed, saved OTP will be removed.
-    return this._entityManager
-      .transaction(async (_entityManager) => {
-        // Save OTP and get expiry date.
-        const otpExpiredAt = await this._accountService.saveOtp(account, otp, _entityManager);
+        if (duplicated) {
+          // create nickname until not duplicated
+          nickname = tokenPayload.name.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
+        } else {
+          break;
+        }
+      }
 
-        this._logger.log(`[${requestUUID}]: OTP is saved`);
-
-        await this._mailService.sendMail(email, 'OTP가 발급 되었습니다', 'otp.html', {
-          nickname: account.nickname,
-          otp,
-        });
-
-        this._logger.log(`[${requestUUID}]: OTP created email is sent: ${email}`);
-
-        // Create DTO and return.
-        return new OtpExpiredAtDto({
-          otpExpiredAt,
-        });
-      })
-      .catch((e) => {
-        this._logger.error(`[${requestUUID}] Error while sending Otp email: ${e.toString()}`, e.stack);
-
-        throw e;
+      account = await this._accountService.createAccount({
+        email: tokenPayload.email,
+        nickname,
+        oauthProvider: 'google',
+        oauthId: tokenPayload.sub,
+        avatarUrl: tokenPayload.picture,
       });
-  }
+    }
 
-  /**
-   * Default login process.
-   * @param requestUUID
-   * @param email
-   * @param otp
-   * @throws ACCOUNT_NOT_FOUND
-   * @throws OTP_NOT_FOUND
-   * @throws EXPIRED_OTP
-   * @throws INVALID_OTP
-   */
-  async login(requestUUID: string, { email, otp }: LoginDto): Promise<ProfileDto> {
-    // Get account.
-    const account = await this._accountService.getAccountByEmail(email);
+    const signedAccessToken = await this._signedAccountService.markAccountAsSigned(account);
 
-    this._logger.log(`[${requestUUID}] Account is found by email: ${email}`);
-
-    // Mark `Account` as signed and return `ProfileDto`.
-    return this._entityManager
-      .transaction(async (_entityManager) => {
-        // Validate OTP.
-        await this._accountService.validateOtp(account, otp, _entityManager);
-
-        this._logger.log(`[${requestUUID}] OTP is validated`);
-
-        // Mark `Account` as signed.
-        const accessToken = await this._signedAccountService.markAccountAsSigned(account, _entityManager);
-
-        this._logger.log(`[${requestUUID}] Account is marked as signed`);
-
-        // Convert and return.
-        return this._accountService.toProfileDto(account, accessToken);
-      })
-      .catch((e) => {
-        this._logger.error(`[${requestUUID}] Error while logging in: ${e.toString()}`, e.stack);
-
-        throw e;
-      });
+    return this._accountService.toProfileDto(account, signedAccessToken);
   }
 
   /**
@@ -225,76 +161,6 @@ export class AuthApiService {
       // Don't throw exception to process logout from the client.
       this._logger.error(`[${requestUUID}] Error while logging out: ${e.toString()}`, e.stack);
     }
-  }
-
-  /**
-   * Join by google.
-   * @param requestUUID
-   * @param nickname
-   * @param idToken
-   * @throws JOINED_ACCOUNT
-   * @throws DUPLICATED_EMAIL
-   * @throws DUPLICATED_NICKNAME
-   */
-  async joinByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<AccountDto> {
-    const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
-
-    if (!tokenPayload) {
-      throw new UnauthorizedException(INVALID_TOKEN_PAYLOAD);
-    }
-
-    if (!tokenPayload.name || !tokenPayload.email) {
-      throw new BadRequestException(INVALID_TOKEN_PAYLOAD);
-    }
-
-    if (!tokenPayload.email_verified) {
-      this._logger.error('Google email is not verified');
-
-      throw new BadRequestException(NOT_VERIFIED_GOOGLE_ACCOUNT);
-    }
-
-    const existingAccount = await this._accountService.findAccountByOauth('google', tokenPayload.sub);
-
-    if (existingAccount) {
-      this._logger.error('Account is duplicated with Google');
-
-      throw new ConflictException(JOINED_ACCOUNT);
-    }
-
-    const nickname =
-      tokenPayload.name.replace(/\s/gm, '').substring(0, 8) + randomUUID().split('-').pop()!.substring(0, 5);
-
-    this._logger.log(`[${requestUUID}] Random nickname is created: ${nickname}`);
-
-    const account = await this._createNewAccount(requestUUID, tokenPayload.email, nickname, 'google', tokenPayload.sub);
-
-    return this._accountService.toAccountDto(account);
-  }
-
-  /**
-   * Login by google.
-   * @param requestUUID
-   * @param idToken
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async loginByGoogle(requestUUID: string, { idToken }: GoogleIdTokenDto): Promise<ProfileDto> {
-    const tokenPayload = await this._oauthService.verifyGoogleIdToken(idToken);
-
-    if (!tokenPayload) {
-      throw new UnauthorizedException(INVALID_TOKEN_PAYLOAD);
-    }
-
-    const account = await this._accountService.getAccountByOauth('google', tokenPayload.sub);
-
-    this._logger.log(`[${requestUUID}] Account is found by google: ${account.id}`);
-
-    // Mark `Account` as signed.
-    const accessToken = await this._signedAccountService.markAccountAsSigned(account);
-
-    this._logger.log(`[${requestUUID}] Account is marked as signed`);
-
-    // Convert and return.
-    return this._accountService.toProfileDto(account, accessToken);
   }
 
   /**
@@ -357,13 +223,13 @@ export class AuthApiService {
 
     return this._entityManager
       .transaction(async (_entityManager) => {
-        const account = await this._accountService.createAccount(
+        const account = await this._accountService.createAccount({
           email,
           nickname,
           oauthProvider,
           oauthId,
-          _entityManager,
-        );
+          entityManager: _entityManager,
+        });
 
         this._logger.log(`[${requestUUID}] Account is created: ${account.id}`);
 

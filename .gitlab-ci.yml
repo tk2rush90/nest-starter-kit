@@ -1,0 +1,32 @@
+stages:
+  - build
+  - serve
+
+cache:
+  paths:
+    - ./node_modules
+  key:
+    files:
+      - package.json
+
+build:
+  stage: build
+  only:
+    - master
+  tags:
+    - mac
+  script:
+    - source ~/.gitlab-runner-zshrc && npm i && npm run build
+  artifacts:
+    paths:
+      - ./node_modules
+      - ./dist
+
+serve:
+  stage: serve
+  tags:
+    - mac
+  only:
+    - master
+  script:
+    - source ~/.gitlab-runner-zshrc && npm run start:pm2

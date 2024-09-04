@@ -6,7 +6,8 @@
     "deleteOutDir": true,
     "assets": [
       "assets/**/*",
-      "email-templates/**/*"
+      "email-templates/**/*",
+      ".well-known/**/*"
     ],
     "watchAssets": true
   }

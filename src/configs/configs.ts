@@ -48,6 +48,7 @@ export const configs = {
       clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
       redirectUrl: process.env.GOOGLE_OAUTH_REDIRECT_URL || '',
+      userinfoUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
     },
   },
 };

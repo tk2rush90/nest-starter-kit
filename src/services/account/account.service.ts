@@ -114,15 +114,20 @@ export class AccountService {
    * @param nickname - Nickname of account.
    * @param oauthProvider
    * @param oauthId
+   * @param avatarUrl
    * @param entityManager - `EntityManager` when using transaction.
    */
-  async createAccount(
-    email: string,
-    nickname: string,
-    oauthProvider?: OauthProvider,
-    oauthId?: string,
-    entityManager?: EntityManager,
-  ): Promise<Account> {
+  async createAccount({
+    email,
+    nickname,
+    oauthProvider = null,
+    oauthId = null,
+    avatarUrl = null,
+    entityManager,
+  }: Pick<Account, 'email' | 'nickname'> &
+    Partial<Pick<Account, 'oauthProvider' | 'oauthId' | 'avatarUrl'>> & {
+      entityManager?: EntityManager;
+    }): Promise<Account> {
     // Get target repository.
     const accountRepository = getTargetRepository(this._accountRepository, entityManager);
 
@@ -135,6 +140,7 @@ export class AccountService {
       salt,
       oauthProvider,
       oauthId,
+      avatarUrl,
       accountExpiredAt: new Date(Date.now() + YEAR),
       createdAt: new Date(),
     });

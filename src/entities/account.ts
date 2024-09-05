@@ -1,4 +1,4 @@
-import { Column, Entity, Generated, OneToMany, PrimaryColumn, Unique } from 'typeorm';
+import { Column, DeleteDateColumn, Entity, Generated, OneToMany, PrimaryColumn, Unique } from 'typeorm';
 import { SignedAccount } from './signed-account';
 import { OauthProvider } from '../types/oauth-provider';
 
@@ -83,6 +83,13 @@ export class Account {
     type: 'timestamp with time zone',
   })
   createdAt: Date | string;
+
+  @DeleteDateColumn({
+    name: 'deleted_at',
+    type: 'time with time zone',
+    nullable: true,
+  })
+  deletedAt: Date | string | null;
 
   /** Expiry date of account */
   @Column({

@@ -21,6 +21,7 @@ import { createUUID } from '../../utils/crypto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { FileApiService } from '../../services/file-api/file-api.service';
 import { UploadFilesDto } from '../../dtos/upload-files-dto';
+import { basename, extname } from 'path';
 
 @Controller('file')
 export class FileApiController {
@@ -32,20 +33,25 @@ export class FileApiController {
    * Streaming file.
    * @param request
    * @param response
-   * @param uploadedDetailId
+   * @param uploadedDetailName - Should include extension
    * @throws UPLOADED_DETAIL_NOT_FOUND
    */
-  @Get(':id')
+  @Get(':name')
   async getFileStream(
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-    @Param('id') uploadedDetailId: string,
+    @Param('name') uploadedDetailName: string,
   ): Promise<StreamableFile> {
     const requestUUID = createUUID();
 
     this._logger.log(`[${requestUUID}] GET /file/:id`);
 
-    return this._fileApiService.getFileStream(requestUUID, request, response, uploadedDetailId);
+    return this._fileApiService.getFileStream(
+      requestUUID,
+      request,
+      response,
+      basename(uploadedDetailName, extname(uploadedDetailName)),
+    );
   }
 
   /**
@@ -79,17 +85,17 @@ export class FileApiController {
   }
 
   /**
-   * Delete file by id.
-   * @param uploadedDetailId
+   * Delete file by name.
+   * @param uploadedDetailName
    * @throws UPLOADED_DETAIL_NOT_FOUND
    */
-  @Delete(':id')
+  @Delete(':name')
   @UseGuards(AuthGuard)
-  async deleteFile(@Param('id') uploadedDetailId: string): Promise<void> {
+  async deleteFile(@Param('name') uploadedDetailName: string): Promise<void> {
     const requestUUID = createUUID();
 
     this._logger.log(`[${requestUUID}] DELETE /file/:id`);
 
-    return this._fileApiService.deleteFile(requestUUID, uploadedDetailId);
+    return this._fileApiService.deleteFile(requestUUID, basename(uploadedDetailName, extname(uploadedDetailName)));
   }
 }

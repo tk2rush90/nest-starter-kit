@@ -79,7 +79,7 @@ export class FileApiService {
   /**
    * Create uploaded details for uploaded files.
    * Files are saved to the destination by multer on request started.
-   * After created, return ids of created details.
+   * After created, return ids with extension of created details.
    * @param requestUUID
    * @param files
    * @param width
@@ -95,7 +95,8 @@ export class FileApiService {
 
           const filePath = join(_file.destination, _file.filename);
 
-          if (_file.mimetype.startsWith('image') && width) {
+          // ignore for svg
+          if (_file.mimetype !== 'image/svg+xml' && _file.mimetype.startsWith('image') && width) {
             _file.buffer = await resizeImageBuffer(_file.buffer, width);
           }
 
@@ -114,7 +115,7 @@ export class FileApiService {
         throw e;
       });
 
-    return uploadedDetails.map((_uploadedDetail) => _uploadedDetail.id);
+    return uploadedDetails.map((_uploadedDetail) => _uploadedDetail.id + extname(_uploadedDetail.filename));
   }
 
   /**

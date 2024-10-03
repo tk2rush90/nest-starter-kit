@@ -1,5 +1,17 @@
-import { JwtPayload, sign, verify } from 'jsonwebtoken';
+import { decode, JwtPayload, sign, verify } from 'jsonwebtoken';
 import { configs } from '../configs/configs';
+
+export async function decodeToken<T>(token: string): Promise<T & JwtPayload> {
+  return new Promise<T & JwtPayload>((resolve, reject) => {
+    try {
+      const payload = decode(token);
+
+      resolve(payload as T & JwtPayload);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
 
 /**
  * Verify a Jsonwebtoken.

@@ -47,7 +47,7 @@ import { MeApiModule } from './modules/me-api/me-api.module';
         }),
         new transports.DailyRotateFile({
           filename: join(configs.paths.logs, `%DATE%.${configs.etc.appName}.log`),
-          datePattern: 'YYYY-MM-DD',
+          datePattern: 'YYYYMMDD',
           json: false,
           maxFiles: '3d',
           format: format.combine(

@@ -7,6 +7,7 @@ import { createUUID } from '../../utils/crypto';
 import { AuthApiService } from '../../services/auth-api/auth-api.service';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { AccessTokenDto } from '../../dtos/access-token-dto';
+import { CodeDto } from '../../dtos/code-dto';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
@@ -47,6 +48,11 @@ export class AuthApiController {
   @Post('start/google')
   async startByGoogle(@Body() accessTokenDto: AccessTokenDto): Promise<ProfileDto> {
     return this._authApiService.startByGoogle(accessTokenDto);
+  }
+
+  @Post('start/kakao')
+  async startByKakao(@Body() body: CodeDto): Promise<ProfileDto> {
+    return this._authApiService.startByKakao(body);
   }
 
   /**

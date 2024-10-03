@@ -13,11 +13,9 @@ import { SignedAccountService } from '../signed-account/signed-account.service';
 import { EntityManager } from 'typeorm';
 import { MailService } from '../mail/mail.service';
 import { OauthService } from '../oauth/oauth.service';
-import { Account } from '../../entities/account';
-import { OauthProvider } from '../../types/oauth-provider';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
-import { ArchivedAccountService } from '../archived-account/archived-account.service';
 import { AccessTokenDto } from '../../dtos/access-token-dto';
+import { CodeDto } from '../../dtos/code-dto';
 
 @Injectable()
 export class AuthApiService {
@@ -29,7 +27,6 @@ export class AuthApiService {
     private readonly _oauthService: OauthService,
     private readonly _accountService: AccountService,
     private readonly _signedAccountService: SignedAccountService,
-    private readonly _archivedAccountService: ArchivedAccountService,
   ) {}
 
   /**
@@ -110,6 +107,42 @@ export class AuthApiService {
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
 
+  async startByKakao(body: CodeDto): Promise<ProfileDto> {
+    const response = await this._oauthService.getKakaoAccessToken(body.code);
+
+    const tokenPayload = await this._oauthService.decodeKakaoIdToken(response.id_token);
+
+    let account = await this._accountService.findAccountByOauth('kakao', tokenPayload.sub);
+
+    // when account not found, create new one
+    if (!account) {
+      let nickname = tokenPayload.nickname.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
+
+      while (true) {
+        const duplicated = await this._accountService.isNicknameDuplicated(nickname);
+
+        if (duplicated) {
+          // create nickname until not duplicated
+          nickname = tokenPayload.nickname.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
+        } else {
+          break;
+        }
+      }
+
+      account = await this._accountService.createAccount({
+        email: tokenPayload.email,
+        nickname,
+        oauthProvider: 'kakao',
+        oauthId: tokenPayload.sub,
+        avatarUrl: tokenPayload.picture,
+      });
+    }
+
+    const signedAccessToken = await this._signedAccountService.markAccountAsSigned(account);
+
+    return this._accountService.toProfileDto(account, signedAccessToken);
+  }
+
   /**
    * Auto login process with token.
    * @param requestUUID
@@ -179,10 +212,6 @@ export class AuthApiService {
 
     await this._entityManager
       .transaction(async (_entityManager) => {
-        const archivedAccount = await this._archivedAccountService.createArchivedAccount(account, _entityManager);
-
-        this._logger.log(`[${requestUUID}] Archived account is created: ${archivedAccount.id}`);
-
         await this._accountService.deleteAccount(account, _entityManager);
 
         this._logger.log(`[${requestUUID}] Account is deleted: ${deletedAccount.id}`);
@@ -198,53 +227,5 @@ export class AuthApiService {
       });
 
     return deletedAccount;
-  }
-
-  /**
-   * Create a new account.
-   * @param requestUUID
-   * @param email
-   * @param nickname
-   * @param oauthProvider
-   * @param oauthId
-   * @throws DUPLICATED_EMAIL
-   * @throws DUPLICATED_NICKNAME
-   */
-  private async _createNewAccount(
-    requestUUID: string,
-    email: string,
-    nickname: string,
-    oauthProvider?: OauthProvider,
-    oauthId?: string,
-  ): Promise<Account> {
-    await this.checkEmailDuplicated(requestUUID, email);
-
-    await this.checkNicknameDuplicated(requestUUID, nickname);
-
-    return this._entityManager
-      .transaction(async (_entityManager) => {
-        const account = await this._accountService.createAccount({
-          email,
-          nickname,
-          oauthProvider,
-          oauthId,
-          entityManager: _entityManager,
-        });
-
-        this._logger.log(`[${requestUUID}] Account is created: ${account.id}`);
-
-        await this._mailService.sendMail(email, '계정이 생성 되었습니다', 'welcome.html', {
-          nickname,
-        });
-
-        this._logger.log(`[${requestUUID}] Welcome email is sent: ${email}`);
-
-        return account;
-      })
-      .catch((e) => {
-        this._logger.error(`[${requestUUID}] Error while joining: ${e.toString()}`, e.stack);
-
-        throw e;
-      });
   }
 }

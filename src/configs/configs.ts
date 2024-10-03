@@ -50,5 +50,11 @@ export const configs = {
       redirectUrl: process.env.GOOGLE_OAUTH_REDIRECT_URL || '',
       userinfoUrl: 'https://www.googleapis.com/oauth2/v3/userinfo',
     },
+    kakao: {
+      clientId: process.env.KAKAO_OAUTH_CLIENT_ID || '',
+      clientSecret: process.env.KAKAO_OAUTH_CLIENT_SECRET || '',
+      redirectUrl: process.env.KAKAO_OAUTH_REDIRECT_URL || '',
+      tokenUrl: 'https://kauth.kakao.com/oauth/token',
+    },
   },
 };

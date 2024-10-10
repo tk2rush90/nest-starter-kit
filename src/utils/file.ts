@@ -38,7 +38,7 @@ export function deleteFileIfExists(filePath: string): void {
  * @param buffer - Buffer to resize.
  * @param targetWidth - Target width to resize.
  */
-export async function resizeImageBuffer(buffer: Buffer, targetWidth: number): Promise<Buffer> {
+export async function resizeToWebP(buffer: Buffer, targetWidth: number): Promise<Buffer> {
   this._logger = new Logger('resizeImageBuffer');
 
   // Get width/height of `buffer`.
@@ -62,6 +62,7 @@ export async function resizeImageBuffer(buffer: Buffer, targetWidth: number): Pr
         height: Math.round(newHeight),
         fit: 'outside',
       })
+      .webp()
       .toBuffer()
       .catch((e) => {
         this._logger.error('Failed to resize image: ' + e.toString(), e.stack);
@@ -73,6 +74,7 @@ export async function resizeImageBuffer(buffer: Buffer, targetWidth: number): Pr
     return Sharp(buffer, { failOn: 'none' })
       .rotate()
       .withMetadata()
+      .webp()
       .toBuffer()
       .catch((e) => {
         this._logger.error('Failed to rotate image: ' + e.toString(), e.stack);

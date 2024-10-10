@@ -1,12 +1,12 @@
 import { Injectable, Logger, StreamableFile } from '@nestjs/common';
 import { UploadDetailService } from '../upload-detail/upload-detail.service';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import { toInteger } from 'lodash';
 import { createReadStream, readFileSync } from 'fs';
 import { Request, Response } from 'express';
 import { UploadDetail } from '../../entities/upload-detail';
 import { EntityManager } from 'typeorm';
-import { createFile, deleteFileIfExists, getFileSize, resizeImageBuffer } from '../../utils/file';
+import { createFile, deleteFileIfExists, getFileSize, resizeToWebP } from '../../utils/file';
 import { UploadFilesDto } from '../../dtos/upload-files-dto';
 import { configs } from '../../configs/configs';
 import { createUUID } from '../../utils/crypto';
@@ -97,7 +97,8 @@ export class FileApiService {
 
           // ignore for svg
           if (_file.mimetype !== 'image/svg+xml' && _file.mimetype.startsWith('image') && width) {
-            _file.buffer = await resizeImageBuffer(_file.buffer, width);
+            _file.filename = createUUID() + basename(_file.originalname, extname(_file.originalname)) + '.webp'; // Replace to webp format.
+            _file.buffer = await resizeToWebP(_file.buffer, width);
           }
 
           createFile(filePath, _file.buffer);

@@ -10,6 +10,7 @@ import {
 import { PagingResultDto } from '../dtos/paging-result-dto';
 import { OrderDirection } from '../types/order-direction';
 import { Logger, NotFoundException } from '@nestjs/common';
+import { camelToSnakeCase } from './string';
 
 /**
  * Get proper target repository.
@@ -69,7 +70,9 @@ export async function getOneWrapper<E extends ObjectLiteral>(
   const entity = await repository.findOne(options);
 
   if (!entity) {
-    throw new NotFoundException(errorCode || repository.metadata.name);
+    throw new NotFoundException(
+      errorCode || camelToSnakeCase(repository.metadata.name).toUpperCase().substring(1) + '_NOT_FOUND',
+    );
   }
 
   return entity;

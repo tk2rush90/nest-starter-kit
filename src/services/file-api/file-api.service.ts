@@ -6,7 +6,7 @@ import { createReadStream, readFileSync } from 'fs';
 import { Request, Response } from 'express';
 import { UploadDetail } from '../../entities/upload-detail';
 import { EntityManager } from 'typeorm';
-import { createFile, deleteFileIfExists, getFileSize, resizeToWebP } from '../../utils/file';
+import { createFile, deleteFileIfExists, getFileSize, resizeGif, resizeToWebP } from '../../utils/file';
 import { UploadFilesDto } from '../../dtos/upload-files-dto';
 import { configs } from '../../configs/configs';
 import { createUUID } from '../../utils/crypto';
@@ -95,8 +95,9 @@ export class FileApiService {
 
           const filePath = join(_file.destination, _file.filename);
 
-          // ignore for svg
-          if (_file.mimetype !== 'image/svg+xml' && _file.mimetype.startsWith('image') && width) {
+          if (_file.mimetype === 'image/gif' && width) {
+            _file.buffer = await resizeGif(_file.buffer, width);
+          } else if (_file.mimetype !== 'image/svg+xml' && _file.mimetype.startsWith('image') && width) {
             _file.filename = createUUID() + basename(_file.originalname, extname(_file.originalname)) + '.webp'; // Replace to webp format.
             _file.buffer = await resizeToWebP(_file.buffer, width);
           }

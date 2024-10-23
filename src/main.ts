@@ -9,6 +9,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { ValidationError } from 'class-validator';
 import { BAD_REQUEST } from './constants/errors';
 import { json, urlencoded } from 'express';
+import { RequestInterceptor } from './interceptors/request/request.interceptor';
 
 async function bootstrap(): Promise<void> {
   let app: NestExpressApplication;
@@ -39,6 +40,8 @@ async function bootstrap(): Promise<void> {
   // Use global filters.
   app.useGlobalFilters(new AppExceptionFilter());
 
+  app.useGlobalInterceptors(new RequestInterceptor());
+
   // Add global pipes.
   app.useGlobalPipes(
     new ValidationPipe({
@@ -67,6 +70,6 @@ async function bootstrap(): Promise<void> {
   });
 
   // To use IPv4, set `hostname` as `0.0.0.0`.
-  await app.listen(3000, '0.0.0.0');
+  await app.listen(configs.etc.production ? 3006 : 3000, '0.0.0.0');
 }
 bootstrap();

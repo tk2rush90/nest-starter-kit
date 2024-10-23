@@ -4,7 +4,7 @@ import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
 import { existsSync, readFileSync } from 'fs';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { configs } from './configs/configs';
-import { AppExceptionFilterFilter } from './filters/app-exception-filter/app-exception-filter.filter';
+import { AppExceptionFilter } from './filters/app-exception/app-exception.filter';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { ValidationError } from 'class-validator';
 import { BAD_REQUEST } from './constants/errors';
@@ -37,7 +37,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
 
   // Use global filters.
-  app.useGlobalFilters(new AppExceptionFilterFilter());
+  app.useGlobalFilters(new AppExceptionFilter());
 
   // Add global pipes.
   app.useGlobalPipes(

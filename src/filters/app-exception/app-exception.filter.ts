@@ -13,7 +13,7 @@ import { BAD_REQUEST, UNEXPECTED_ERROR } from '../../constants/errors';
 
 /** A filter that catches `Error` to normalize */
 @Catch()
-export class AppExceptionFilterFilter<T> implements ExceptionFilter {
+export class AppExceptionFilter<T> implements ExceptionFilter {
   private readonly _logger = new Logger('AppExceptionFilterFilter');
 
   catch(exception: T, host: ArgumentsHost): void {

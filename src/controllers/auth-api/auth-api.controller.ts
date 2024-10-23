@@ -7,7 +7,7 @@ import { createUUID } from '../../utils/crypto';
 import { AuthApiService } from '../../services/auth-api/auth-api.service';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { AccessTokenDto } from '../../dtos/access-token-dto';
-import { CodeDto } from '../../dtos/code-dto';
+import { StartByKakaoDto } from '../../dtos/start-by-kakao-dto';
 
 /** A controller that contains endpoint related with authentication */
 @Controller('auth')
@@ -51,7 +51,7 @@ export class AuthApiController {
   }
 
   @Post('start/kakao')
-  async startByKakao(@Body() body: CodeDto): Promise<ProfileDto> {
+  async startByKakao(@Body() body: StartByKakaoDto): Promise<ProfileDto> {
     return this._authApiService.startByKakao(body);
   }
 

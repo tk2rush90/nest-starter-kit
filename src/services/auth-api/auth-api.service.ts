@@ -15,7 +15,7 @@ import { MailService } from '../mail/mail.service';
 import { OauthService } from '../oauth/oauth.service';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { AccessTokenDto } from '../../dtos/access-token-dto';
-import { CodeDto } from '../../dtos/code-dto';
+import { StartByKakaoDto } from '../../dtos/start-by-kakao-dto';
 
 @Injectable()
 export class AuthApiService {
@@ -107,8 +107,8 @@ export class AuthApiService {
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
 
-  async startByKakao(body: CodeDto): Promise<ProfileDto> {
-    const response = await this._oauthService.getKakaoAccessToken(body.code);
+  async startByKakao(body: StartByKakaoDto): Promise<ProfileDto> {
+    const response = await this._oauthService.getKakaoAccessToken(body.code, body.redirectUri);
 
     const tokenPayload = await this._oauthService.decodeKakaoIdToken(response.id_token);
 

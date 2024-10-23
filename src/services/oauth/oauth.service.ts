@@ -23,13 +23,13 @@ export class OauthService {
     return response.data;
   }
 
-  async getKakaoAccessToken(code: string): Promise<KakaoTokenResponse> {
+  async getKakaoAccessToken(code: string, redirectUri: string): Promise<KakaoTokenResponse> {
     const response = await lastValueFrom(
       this._httpService.post<KakaoTokenResponse>(configs.oauth.kakao.tokenUrl, {
         grant_type: 'authorization_code',
         client_id: configs.oauth.kakao.clientId,
         client_secret: configs.oauth.kakao.clientSecret,
-        redirect_uri: configs.oauth.kakao.redirectUrl,
+        redirect_uri: redirectUri,
         code,
       }),
     );

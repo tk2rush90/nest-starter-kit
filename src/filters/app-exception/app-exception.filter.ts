@@ -19,6 +19,9 @@ export class AppExceptionFilter<T> implements ExceptionFilter {
   catch(exception: T, host: ArgumentsHost): void {
     const response: Response = host.switchToHttp().getResponse();
 
+    // RAW 에러 로깅
+    this._logger.error(exception);
+
     // Log caught exception.
     this._logger.error('Exception is caught: ' + (exception as Error).message, (exception as Error).stack);
 

@@ -1,23 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UploadDetail } from '../../entities/upload-detail';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { createWrapper, getOneWrapper, getTargetRepository } from '../../utils/typeorm';
-import { UPLOADED_DETAIL_NOT_FOUND } from '../../constants/errors';
+import { EntityManagerDto } from '../../dtos/entity-manager-dto';
 
 @Injectable()
 export class UploadDetailService {
-  constructor(@InjectRepository(UploadDetail) private readonly _uploadDetailRepository: Repository<UploadDetail>) {}
+  constructor(@InjectRepository(UploadDetail) private readonly _repository: Repository<UploadDetail>) {}
 
-  /**
-   * Create uploaded details for uploaded file.
-   * @param file
-   * @param entityManager
-   */
-  async createUploadDetail(file: Express.Multer.File, entityManager?: EntityManager): Promise<UploadDetail> {
-    const uploadDetailRepository = getTargetRepository(this._uploadDetailRepository, entityManager);
+  async create({
+    file,
+    entityManager,
+  }: { file: Express.Multer.File } & Partial<EntityManagerDto>): Promise<UploadDetail> {
+    const repository = getTargetRepository(this._repository, entityManager);
 
-    return createWrapper(uploadDetailRepository, {
+    return createWrapper(repository, {
       filename: file.filename,
       fileSize: file.size,
       mimetype: file.mimetype,
@@ -26,30 +24,17 @@ export class UploadDetailService {
     });
   }
 
-  /**
-   * Get uploaded detail by id.
-   * @param id
-   * @throws UPLOADED_DETAIL_NOT_FOUND
-   */
-  async getUploadedDetailById(id: string): Promise<UploadDetail> {
-    return getOneWrapper(
-      this._uploadDetailRepository,
-      {
-        where: {
-          id,
-        },
+  async getOneById({ id }: Pick<UploadDetail, 'id'>): Promise<UploadDetail> {
+    return getOneWrapper(this._repository, {
+      where: {
+        id,
       },
-      UPLOADED_DETAIL_NOT_FOUND,
-    );
+    });
   }
 
-  /**
-   * Delete uploaded detail.
-   * @param uploadedDetail
-   */
-  async deleteUploadedDetail(uploadedDetail: UploadDetail): Promise<void> {
-    await this._uploadDetailRepository.delete({
-      id: uploadedDetail.id,
+  async delete({ id }: Pick<UploadDetail, 'id'>): Promise<void> {
+    await this._repository.delete({
+      id,
     });
   }
 }

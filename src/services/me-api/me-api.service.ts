@@ -23,7 +23,7 @@ export class MeApiService {
    * @throws ACCOUNT_NOT_FOUND
    */
   async getAccountProfile(requestUUID: string, accessToken: string): Promise<ProfileDto> {
-    const account = await this._accountService.getAccountByAccessToken(accessToken);
+    const account = await this._accountService.getOneByAccessToken(accessToken);
 
     this._logger.log(`[${requestUUID}] Account profile found`);
 
@@ -44,7 +44,7 @@ export class MeApiService {
     accessToken: string,
     { nickname, avatarUrl }: UpdateAccountDto,
   ): Promise<ProfileDto> {
-    const account = await this._accountService.getAccountByAccessToken(accessToken);
+    const account = await this._accountService.getOneByAccessToken(accessToken);
 
     this._logger.log(`[${requestUUID}] Account profile found`);
 
@@ -57,12 +57,20 @@ export class MeApiService {
     }
 
     await this._entityManager
-      .transaction(async (_entityManager) => {
-        await this._accountService.updateAccountNickname(account, nickname, _entityManager);
+      .transaction(async (entityManager) => {
+        await this._accountService.updateNickname({
+          id: account.id,
+          nickname,
+          entityManager,
+        });
 
         this._logger.log(`[${requestUUID}] Nickname is updated`);
 
-        await this._accountService.updateAccountAvatarUrl(account, avatarUrl || null, _entityManager);
+        await this._accountService.updateAvatarUrl({
+          id: account.id,
+          avatarUrl: avatarUrl || null,
+          entityManager,
+        });
 
         this._logger.log(`[${requestUUID}] Avatar id is updated`);
       })
@@ -72,7 +80,9 @@ export class MeApiService {
         throw e;
       });
 
-    const updatedAccount = await this._accountService.getAccountById(account.id);
+    const updatedAccount = await this._accountService.getOneById({
+      id: account.id,
+    });
 
     this._logger.log(`[${requestUUID}] Updated account is found`);
 

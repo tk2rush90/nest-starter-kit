@@ -1,40 +1,39 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SignedAccount } from '../../entities/signed-account';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Account } from '../../entities/account';
 import { createWrapper, getOneWrapper, getTargetRepository } from '../../utils/typeorm';
 import { YEAR } from '../../constants/milliseconds';
-import { SIGN_REQUIRED } from '../../constants/errors';
 import { encrypt } from '../../utils/crypto';
 import { signToken } from '../../utils/jwt';
+import { EntityManagerDto } from '../../dtos/entity-manager-dto';
 
 @Injectable()
 export class SignedAccountService {
-  constructor(@InjectRepository(SignedAccount) private readonly _signedAccountRepository: Repository<SignedAccount>) {}
+  constructor(@InjectRepository(SignedAccount) private readonly _repository: Repository<SignedAccount>) {}
 
-  /**
-   * Create `SignedAccount` to mark `Account` as signed.
-   * It creates new access token for `Account`.
-   * @param account - `Account` to mark as signed.
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async markAccountAsSigned(account: Account, entityManager?: EntityManager): Promise<string> {
+  async markAccountAsSigned({
+    accountId,
+    email,
+    salt,
+    entityManager,
+  }: Pick<SignedAccount, 'accountId'> & Pick<Account, 'email' | 'salt'> & Partial<EntityManagerDto>): Promise<string> {
     // Get repository.
-    const signedAccountRepository = getTargetRepository(this._signedAccountRepository, entityManager);
+    const repository = getTargetRepository(this._repository, entityManager);
 
     // Sign new access token.
     const accessToken = await signToken({
-      id: account.id,
-      email: account.email,
+      id: accountId,
+      email,
     });
 
     // Encrypt signed token with `salt`.
-    const encryptedAccessToken = encrypt(accessToken, account.salt);
+    const encryptedAccessToken = encrypt(accessToken, salt);
 
-    await createWrapper(signedAccountRepository, {
+    await createWrapper(repository, {
       accessToken: encryptedAccessToken,
-      accountId: account.id,
+      accountId,
       createdAt: new Date(),
       expiredAt: new Date(Date.now() + YEAR), // Expired after 1 year.
     });
@@ -43,33 +42,24 @@ export class SignedAccountService {
     return accessToken;
   }
 
-  /**
-   * Get signed account.
-   * @param account
-   * @param encryptedAccessToken
-   */
-  async getSignedAccount(account: Account, encryptedAccessToken: string): Promise<SignedAccount> {
-    return getOneWrapper(
-      this._signedAccountRepository,
-      {
-        where: {
-          accountId: account.id,
-          accessToken: encryptedAccessToken,
-        },
+  /** `accessToken` 은 encrypt 되어야 함 */
+  async getOneByUnique({
+    accountId,
+    accessToken,
+  }: Pick<SignedAccount, 'accountId' | 'accessToken'>): Promise<SignedAccount> {
+    return getOneWrapper(this._repository, {
+      where: {
+        accountId,
+        accessToken,
       },
-      SIGN_REQUIRED,
-    );
+    });
   }
 
-  /**
-   * Update expiry date of signed account.
-   * @param signedAccount
-   */
-  async updateExpiryDate(signedAccount: SignedAccount): Promise<void> {
+  async updateExpiryDate({ id }: Pick<SignedAccount, 'id'>): Promise<void> {
     // Update expiry date of `SignedAccount`.
-    await this._signedAccountRepository.update(
+    await this._repository.update(
       {
-        id: signedAccount.id,
+        id,
       },
       {
         expiredAt: new Date(Date.now() + YEAR), // Expired after 1 year.
@@ -77,13 +67,9 @@ export class SignedAccountService {
     );
   }
 
-  /**
-   * Delete signed account.
-   * @param signedAccount
-   */
-  async deleteSignedAccount(signedAccount: SignedAccount): Promise<void> {
-    await this._signedAccountRepository.delete({
-      id: signedAccount.id,
+  async delete({ id }: Pick<SignedAccount, 'id'>): Promise<void> {
+    await this._repository.delete({
+      id,
     });
   }
 }

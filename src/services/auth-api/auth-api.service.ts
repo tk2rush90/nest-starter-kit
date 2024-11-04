@@ -38,7 +38,7 @@ export class AuthApiService {
    */
   async checkEmailDuplicated(requestUUID: string, email: string): Promise<void> {
     // Check email duplication.
-    if (await this._accountService.isEmailDuplicated(email)) {
+    if (await this._accountService.isEmailDuplicated({ email })) {
       this._logger.error(`[${requestUUID}] Email is duplicated: ${email}`);
 
       throw new ConflictException(DUPLICATED_EMAIL);
@@ -56,7 +56,7 @@ export class AuthApiService {
    */
   async checkNicknameDuplicated(requestUUID: string, nickname: string): Promise<void> {
     // Check nickname duplication.
-    if (await this._accountService.isNicknameDuplicated(nickname)) {
+    if (await this._accountService.isNicknameDuplicated({ nickname })) {
       this._logger.error(`[${requestUUID}] Nickname is duplicated: ${nickname}`);
 
       throw new ConflictException(DUPLICATED_NICKNAME);
@@ -76,14 +76,17 @@ export class AuthApiService {
       throw new BadRequestException(INVALID_TOKEN_PAYLOAD);
     }
 
-    let account = await this._accountService.findAccountByOauth('google', tokenPayload.sub);
+    let account = await this._accountService.findOneByOauth({
+      oauthProvider: 'google',
+      oauthId: tokenPayload.sub,
+    });
 
     // when account not found, create new one
     if (!account) {
       let nickname = tokenPayload.name.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
 
       while (true) {
-        const duplicated = await this._accountService.isNicknameDuplicated(nickname);
+        const duplicated = await this._accountService.isNicknameDuplicated({ nickname });
 
         if (duplicated) {
           // create nickname until not duplicated
@@ -93,7 +96,7 @@ export class AuthApiService {
         }
       }
 
-      account = await this._accountService.createAccount({
+      account = await this._accountService.create({
         email: tokenPayload.email,
         nickname,
         oauthProvider: 'google',
@@ -102,7 +105,11 @@ export class AuthApiService {
       });
     }
 
-    const signedAccessToken = await this._signedAccountService.markAccountAsSigned(account);
+    const signedAccessToken = await this._signedAccountService.markAccountAsSigned({
+      accountId: account.id,
+      email: account.email,
+      salt: account.salt,
+    });
 
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
@@ -112,14 +119,14 @@ export class AuthApiService {
 
     const tokenPayload = await this._oauthService.decodeKakaoIdToken(response.id_token);
 
-    let account = await this._accountService.findAccountByOauth('kakao', tokenPayload.sub);
+    let account = await this._accountService.findOneByOauth({ oauthProvider: 'kakao', oauthId: tokenPayload.sub });
 
     // when account not found, create new one
     if (!account) {
       let nickname = tokenPayload.nickname.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
 
       while (true) {
-        const duplicated = await this._accountService.isNicknameDuplicated(nickname);
+        const duplicated = await this._accountService.isNicknameDuplicated({ nickname });
 
         if (duplicated) {
           // create nickname until not duplicated
@@ -129,7 +136,7 @@ export class AuthApiService {
         }
       }
 
-      account = await this._accountService.createAccount({
+      account = await this._accountService.create({
         email: tokenPayload.email,
         nickname,
         oauthProvider: 'kakao',
@@ -138,7 +145,11 @@ export class AuthApiService {
       });
     }
 
-    const signedAccessToken = await this._signedAccountService.markAccountAsSigned(account);
+    const signedAccessToken = await this._signedAccountService.markAccountAsSigned({
+      accountId: account.id,
+      email: account.email,
+      salt: account.salt,
+    });
 
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
@@ -183,11 +194,16 @@ export class AuthApiService {
 
       this._logger.log(`[${requestUUID}] Access token is encrypted`);
 
-      const signedAccount = await this._signedAccountService.getSignedAccount(account, encryptedAccessToken);
+      const signedAccount = await this._signedAccountService.getOneByUnique({
+        accountId: account.id,
+        accessToken: encryptedAccessToken,
+      });
 
       this._logger.log(`[${requestUUID}] Signed account found`);
 
-      await this._signedAccountService.deleteSignedAccount(signedAccount);
+      await this._signedAccountService.delete({
+        id: signedAccount.id,
+      });
 
       this._logger.log(`[${requestUUID}] Signed account deleted`);
     } catch (e) {
@@ -211,8 +227,11 @@ export class AuthApiService {
     const deletedAccount = this._accountService.toDeletedAccountDto(account);
 
     await this._entityManager
-      .transaction(async (_entityManager) => {
-        await this._accountService.deleteAccount(account, _entityManager);
+      .transaction(async (entityManager) => {
+        await this._accountService.delete({
+          id: account.id,
+          entityManager,
+        });
 
         this._logger.log(`[${requestUUID}] Account is deleted: ${deletedAccount.id}`);
 

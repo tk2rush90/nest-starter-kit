@@ -34,7 +34,9 @@ export class FileApiService {
     response: Response,
     uploadedDetailId: string,
   ): Promise<StreamableFile> {
-    const uploadedDetail = await this._uploadedDetailService.getUploadedDetailById(uploadedDetailId);
+    const uploadedDetail = await this._uploadedDetailService.getOneById({
+      id: uploadedDetailId,
+    });
 
     this._logger.log(`[${requestUUID}] Uploaded detail found: ${uploadedDetailId}`);
 
@@ -88,7 +90,7 @@ export class FileApiService {
     const uploadedDetails: UploadDetail[] = [];
 
     await this._entityManager
-      .transaction(async (_entityManager) => {
+      .transaction(async (entityManager) => {
         for (const _file of files) {
           _file.destination = configs.paths.files;
           _file.filename = createUUID() + extname(_file.originalname); // Keep extension.
@@ -106,7 +108,12 @@ export class FileApiService {
 
           _file.size = getFileSize(filePath);
 
-          uploadedDetails.push(await this._uploadedDetailService.createUploadDetail(_file, _entityManager));
+          uploadedDetails.push(
+            await this._uploadedDetailService.create({
+              file: _file,
+              entityManager,
+            }),
+          );
         }
 
         this._logger.log(`[${requestUUID}] Uploaded details created`);
@@ -127,11 +134,15 @@ export class FileApiService {
    * @throws UPLOADED_DETAIL_NOT_FOUND
    */
   async deleteFile(requestUUID: string, uploadedDetailId: string): Promise<void> {
-    const uploadedDetail = await this._uploadedDetailService.getUploadedDetailById(uploadedDetailId);
+    const uploadedDetail = await this._uploadedDetailService.getOneById({
+      id: uploadedDetailId,
+    });
 
     this._logger.log(`[${requestUUID}] Uploaded detail is found: ${uploadedDetailId}`);
 
-    await this._uploadedDetailService.deleteUploadedDetail(uploadedDetail);
+    await this._uploadedDetailService.delete({
+      id: uploadedDetail.id,
+    });
 
     deleteFileIfExists(join(uploadedDetail.storagePath, uploadedDetail.filename));
   }

@@ -1,18 +1,18 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../../entities/account';
-import { EntityManager, Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { createWrapper, getOneWrapper, getTargetRepository } from '../../utils/typeorm';
-import { MINUTE, YEAR } from '../../constants/milliseconds';
-import { ACCOUNT_NOT_FOUND, EXPIRED_OTP, INVALID_OTP, OTP_NOT_FOUND, SIGN_REQUIRED } from '../../constants/errors';
+import { YEAR } from '../../constants/milliseconds';
+import { SIGN_REQUIRED } from '../../constants/errors';
 import { AccountDto } from '../../dtos/account-dto';
 import { ProfileDto } from '../../dtos/profile-dto';
 import { SignedAccountService } from '../signed-account/signed-account.service';
 import { createSalt, encrypt } from '../../utils/crypto';
 import { verifyToken } from '../../utils/jwt';
-import { OauthProvider } from '../../types/oauth-provider';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { AccountJsonDto } from '../../dtos/account-json-dto';
+import { EntityManagerDto } from '../../dtos/entity-manager-dto';
 
 /** A service that contains database related features for `Account` */
 @Injectable()
@@ -20,16 +20,12 @@ export class AccountService {
   private readonly _logger = new Logger('AccountService');
 
   constructor(
-    @InjectRepository(Account) private readonly _accountRepository: Repository<Account>,
+    @InjectRepository(Account) private readonly _repository: Repository<Account>,
     private readonly _signedAccountService: SignedAccountService,
   ) {}
 
-  /**
-   * Get duplicated status of email.
-   * @param email
-   */
-  async isEmailDuplicated(email: string): Promise<boolean> {
-    const accountCount = await this._accountRepository.count({
+  async isEmailDuplicated({ email }: Pick<Account, 'email'>): Promise<boolean> {
+    const accountCount = await this._repository.count({
       where: {
         email,
       },
@@ -38,12 +34,8 @@ export class AccountService {
     return accountCount > 0;
   }
 
-  /**
-   * Get duplicated status of nickname.
-   * @param nickname
-   */
-  async isNicknameDuplicated(nickname: string): Promise<boolean> {
-    const accountCount = await this._accountRepository.count({
+  async isNicknameDuplicated({ nickname }: Pick<Account, 'nickname'>): Promise<boolean> {
+    const accountCount = await this._repository.count({
       where: {
         nickname,
       },
@@ -52,28 +44,15 @@ export class AccountService {
     return accountCount > 0;
   }
 
-  /**
-   * Get an account by email.
-   * @param email
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async getAccountByEmail(email: string): Promise<Account> {
-    return getOneWrapper(
-      this._accountRepository,
-      {
-        where: {
-          email,
-        },
+  async getOneByEmail({ email }: Pick<Account, 'email'>): Promise<Account> {
+    return getOneWrapper(this._repository, {
+      where: {
+        email,
       },
-      ACCOUNT_NOT_FOUND,
-    );
+    });
   }
 
-  /**
-   * Get an `Account` by access token.
-   * @param accessToken - Access token to get `Account`.
-   */
-  async getAccountByAccessToken(accessToken: string): Promise<Account> {
+  async getOneByAccessToken(accessToken: string): Promise<Account> {
     // Verify access token.
     const payload = await verifyToken(accessToken).catch((e) => {
       this._logger.error('Failed to verify access token: ' + e.toString(), e.stack);
@@ -82,42 +61,18 @@ export class AccountService {
     });
 
     // Get `Account` by email from verified token.
-    return this.getAccountByEmail(payload.email);
+    return this.getOneByEmail(payload.email);
   }
 
-  /**
-   * Get account by id.
-   * When account not found, it throws exception.
-   * @param id - Account id to get.
-   */
-  async getAccountById(id: string): Promise<Account> {
-    // Find account.
-    const account = await this._accountRepository.findOne({
+  async getOneById({ id }: Pick<Account, 'id'>): Promise<Account> {
+    return getOneWrapper(this._repository, {
       where: {
         id,
       },
     });
-
-    // When not found, throw exception.
-    if (!account) {
-      throw new NotFoundException(ACCOUNT_NOT_FOUND);
-    }
-
-    // Return.
-    return account;
   }
 
-  /**
-   * Create an `Account` entity.
-   * Random `salt` for account is created, too.
-   * @param email - Email of account.
-   * @param nickname - Nickname of account.
-   * @param oauthProvider
-   * @param oauthId
-   * @param avatarUrl
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async createAccount({
+  async create({
     email,
     nickname,
     oauthProvider = null,
@@ -125,16 +80,15 @@ export class AccountService {
     avatarUrl = null,
     entityManager,
   }: Pick<Account, 'email' | 'nickname'> &
-    Partial<Pick<Account, 'oauthProvider' | 'oauthId' | 'avatarUrl'>> & {
-      entityManager?: EntityManager;
-    }): Promise<Account> {
+    Partial<Pick<Account, 'oauthProvider' | 'oauthId' | 'avatarUrl'>> &
+    Partial<EntityManagerDto>): Promise<Account> {
     // Get target repository.
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
+    const repository = getTargetRepository(this._repository, entityManager);
 
     // Create random salt string.
     const salt = createSalt();
 
-    return createWrapper(accountRepository, {
+    return createWrapper(repository, {
       email,
       nickname,
       salt,
@@ -146,22 +100,16 @@ export class AccountService {
     });
   }
 
-  /**
-   * Update account avatar id.
-   * @param account
-   * @param avatarUrl
-   * @param entityManager
-   */
-  async updateAccountAvatarUrl(
-    account: Account,
-    avatarUrl: string | null,
-    entityManager?: EntityManager,
-  ): Promise<void> {
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
+  async updateAvatarUrl({
+    id,
+    avatarUrl,
+    entityManager,
+  }: Pick<Account, 'id' | 'avatarUrl'> & Partial<EntityManagerDto>): Promise<void> {
+    const repository = getTargetRepository(this._repository, entityManager);
 
-    await accountRepository.update(
+    await repository.update(
       {
-        id: account.id,
+        id,
       },
       {
         avatarUrl,
@@ -169,107 +117,19 @@ export class AccountService {
     );
   }
 
-  /**
-   * Update account nickname.
-   * It doesn't validate nickname duplication.
-   * @param account
-   * @param nickname
-   * @param entityManager
-   */
-  async updateAccountNickname(account: Account, nickname: string, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
+  async updateNickname({
+    id,
+    nickname,
+    entityManager,
+  }: Pick<Account, 'id' | 'nickname'> & Partial<EntityManagerDto>): Promise<void> {
+    const repository = getTargetRepository(this._repository, entityManager);
 
-    await accountRepository.update(
+    await repository.update(
       {
-        id: account.id,
+        id,
       },
       {
         nickname,
-      },
-    );
-  }
-
-  /**
-   * Save OTP to user account.
-   * OTP will be expired after 3 minutes.
-   * @param account - `Account` to save OTP.
-   * @param otp - OTP which is required to sign in.
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async saveOtp(account: Account, otp: string, entityManager?: EntityManager): Promise<Date> {
-    // Get target repository.
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
-
-    // Create expiry date.
-    const otpExpiredAt = new Date(Date.now() + MINUTE * 3);
-
-    // Encrypt OTP.
-    const encryptedOtp = encrypt(otp, account.salt);
-
-    // Update `Account` with OTP and expiry date.
-    await accountRepository.update(
-      {
-        id: account.id,
-      },
-      {
-        otp: encryptedOtp,
-        otpExpiredAt,
-      },
-    );
-
-    // Returns expiry date.
-    return otpExpiredAt;
-  }
-
-  /**
-   * Validate OTP.
-   * @param account - `Account` to validate OTP.
-   * @param otp - OTP.
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async validateOtp(account: Account, otp: string, entityManager?: EntityManager): Promise<void> {
-    // Check OTP is issued for an `Account`.
-    if (!account.otp || !account.otpExpiredAt) {
-      throw new NotFoundException(OTP_NOT_FOUND);
-    }
-
-    // Encrypt OTP.
-    const encryptedOtp = encrypt(otp, account.salt);
-
-    // Check expiry date.
-    if (new Date(account.otpExpiredAt).getTime() < Date.now()) {
-      // When expired, remove OTP.
-      await this.removeOtp(account, entityManager);
-
-      throw new UnauthorizedException(EXPIRED_OTP);
-    }
-
-    // Check OTP.
-    if (encryptedOtp !== account.otp) {
-      throw new UnauthorizedException(INVALID_OTP);
-    }
-
-    // When validation passed, remove OTP.
-    await this.removeOtp(account, entityManager);
-  }
-
-  /**
-   * Remove OTP from `Account`.
-   * @param account - `Account` to remove OTP.
-   * @param entityManager - `EntityManager` when using transaction.
-   */
-  async removeOtp(account: Account, entityManager?: EntityManager): Promise<void> {
-    // Get target repository.
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
-
-    // Remove OTP and OTP expiry date.
-    await accountRepository.update(
-      {
-        id: account.id,
-      },
-      {
-        otp: null,
-        otpExpiredAt: null,
       },
     );
   }
@@ -285,67 +145,54 @@ export class AccountService {
    * @param accessToken - Access token to validate.
    */
   async validateAccessToken(accessToken: string): Promise<Account> {
-    const account = await this.getAccountByAccessToken(accessToken);
+    const account = await this.getOneByAccessToken(accessToken);
 
     // Encrypt access token to find `SignedAccount`.
     const encryptedAccessToken = encrypt(accessToken, account.salt);
 
     // Find `SignedAccount`
-    const signedAccount = await this._signedAccountService.getSignedAccount(account, encryptedAccessToken);
+    const signedAccount = await this._signedAccountService.getOneByUnique({
+      accountId: account.id,
+      accessToken: encryptedAccessToken,
+    });
 
     // Update expiry date.
-    await this._signedAccountService.updateExpiryDate(signedAccount);
+    await this._signedAccountService.updateExpiryDate({
+      id: signedAccount.id,
+    });
 
     // Return account.
     return account;
   }
 
-  /**
-   * Delete account.
-   * Files related with data will be deleted automatically by scheduler.
-   * @param account - Account to delete.
-   * @param entityManager
-   */
-  async deleteAccount(account: Account, entityManager?: EntityManager): Promise<void> {
-    const accountRepository = getTargetRepository(this._accountRepository, entityManager);
+  async delete({ id, entityManager }: Pick<Account, 'id'> & Partial<EntityManagerDto>): Promise<void> {
+    const repository = getTargetRepository(this._repository, entityManager);
 
     // Delete account.
-    await accountRepository.delete({
-      id: account.id,
+    await repository.delete({
+      id,
     });
   }
 
-  /**
-   * Find an account with oauth.
-   * @param oauthProvider
-   * @param oauthId
-   */
-  async findAccountByOauth(oauthProvider: OauthProvider, oauthId: string): Promise<Account | null> {
-    return this._accountRepository.findOne({
+  async findOneByOauth({
+    oauthId,
+    oauthProvider,
+  }: Pick<Account, 'oauthId' | 'oauthProvider'>): Promise<Account | null> {
+    return this._repository.findOne({
       where: {
-        oauthProvider,
-        oauthId,
+        oauthProvider: oauthProvider ? oauthProvider : IsNull(),
+        oauthId: oauthId ? oauthId : IsNull(),
       },
     });
   }
 
-  /**
-   * Get an account with oauth.
-   * @param oauthProvider
-   * @param oauthId
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async getAccountByOauth(oauthProvider: OauthProvider, oauthId: string): Promise<Account> {
-    return getOneWrapper(
-      this._accountRepository,
-      {
-        where: {
-          oauthProvider,
-          oauthId,
-        },
+  async getOneByOauth({ oauthId, oauthProvider }: Pick<Account, 'oauthId' | 'oauthProvider'>): Promise<Account> {
+    return getOneWrapper(this._repository, {
+      where: {
+        oauthProvider: oauthProvider ? oauthProvider : IsNull(),
+        oauthId: oauthId ? oauthId : IsNull(),
       },
-      ACCOUNT_NOT_FOUND,
-    );
+    });
   }
 
   /**

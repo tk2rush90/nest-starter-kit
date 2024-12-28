@@ -4,7 +4,7 @@ import { ProfileDto } from '../../dtos/profile-dto';
 import { AuthGuard } from '../../guards/auth/auth.guard';
 import { UpdateAccountDto } from '../../dtos/update-account-dto';
 
-@Controller('me')
+@Controller('profile')
 @UseGuards(AuthGuard)
 export class ProfileApiController {
   private readonly _logger = new Logger('ProfileApiController');

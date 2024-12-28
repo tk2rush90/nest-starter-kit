@@ -8,10 +8,10 @@ import { OauthProvider } from '../types/oauth-provider';
 @Unique('account_nickname_unique', ['nickname'])
 export class Account {
   /** Account id */
-  @Generated('uuid')
+  @Generated('increment')
   @PrimaryColumn({
     name: 'id',
-    type: 'uuid',
+    type: 'bigint',
     primaryKeyConstraintName: 'account_pk',
   })
   id: string;
@@ -36,22 +36,6 @@ export class Account {
     type: 'text',
   })
   nickname: string;
-
-  /** Issued OTP to sign in. It should be encrypted with `salt` */
-  @Column({
-    name: 'otp',
-    type: 'text',
-    nullable: true,
-  })
-  otp: string | null;
-
-  /** Expiry date of OTP */
-  @Column({
-    name: 'otp_expired_at',
-    type: 'timestamp with time zone',
-    nullable: true,
-  })
-  otpExpiredAt: Date | string | null;
 
   /** Avatar url */
   @Column({

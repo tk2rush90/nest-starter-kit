@@ -1,12 +1,6 @@
-import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import {
-  DUPLICATED_EMAIL,
-  DUPLICATED_NICKNAME,
-  INVALID_TOKEN_PAYLOAD,
-  NOT_VERIFIED_GOOGLE_ACCOUNT,
-  SIGN_REQUIRED,
-} from '../../constants/errors';
-import { createSalt, encrypt } from '../../utils/crypto';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { INVALID_TOKEN_PAYLOAD, NOT_VERIFIED_GOOGLE_ACCOUNT } from '../../constants/errors';
+import { encrypt } from '../../utils/crypto';
 import { ProfileDto } from '../../dtos/profile-dto';
 import { AccountService } from '../account/account.service';
 import { SignedAccountService } from '../signed-account/signed-account.service';
@@ -16,6 +10,8 @@ import { OauthService } from '../oauth/oauth.service';
 import { DeletedAccountDto } from '../../dtos/deleted-account-dto';
 import { AccessTokenDto } from '../../dtos/access-token-dto';
 import { StartByKakaoDto } from '../../dtos/start-by-kakao-dto';
+import { EmailDto } from '../../dtos/email-dto';
+import { NicknameDto } from '../../dtos/nickname-dto';
 
 @Injectable()
 export class AuthApiService {
@@ -29,44 +25,22 @@ export class AuthApiService {
     private readonly _signedAccountService: SignedAccountService,
   ) {}
 
-  /**
-   * Check email duplicated.
-   * When duplicated, throws DUPLICATED_EMAIL error.
-   * @param requestUUID
-   * @param email
-   * @throws DUPLICATED_EMAIL
-   */
-  async checkEmailDuplicated(requestUUID: string, email: string): Promise<void> {
-    // Check email duplication.
-    if (await this._accountService.isEmailDuplicated({ email })) {
-      this._logger.error(`[${requestUUID}] Email is duplicated: ${email}`);
+  /** 이메일 중복 체크 */
+  async checkEmailDuplicated(query: EmailDto): Promise<void> {
+    await this._accountService.checkDuplicated(query);
+  }
 
-      throw new ConflictException(DUPLICATED_EMAIL);
-    } else {
-      this._logger.log(`[${requestUUID}] Email duplication checked: ${email}`);
-    }
+  /** 닉네임 중복 체크 */
+  async checkNicknameDuplicated(query: NicknameDto): Promise<void> {
+    await this._accountService.checkDuplicated(query);
   }
 
   /**
-   * Check nickname duplicated.
-   * When duplicated, throws DUPLICATED_NICKNAME error.
-   * @param requestUUID
-   * @param nickname
-   * @throws DUPLICATED_NICKNAME
+   * 구글 계정으로 시작하기
+   * 기존 계정이 있을 경우 로그인, 없을 경우 새 계정 생성
    */
-  async checkNicknameDuplicated(requestUUID: string, nickname: string): Promise<void> {
-    // Check nickname duplication.
-    if (await this._accountService.isNicknameDuplicated({ nickname })) {
-      this._logger.error(`[${requestUUID}] Nickname is duplicated: ${nickname}`);
-
-      throw new ConflictException(DUPLICATED_NICKNAME);
-    } else {
-      this._logger.log(`[${requestUUID}] Nickname duplication checked: ${nickname}`);
-    }
-  }
-
-  async startByGoogle({ accessToken }: AccessTokenDto): Promise<ProfileDto> {
-    const tokenPayload = await this._oauthService.verifyGoogleAccessToken(accessToken);
+  async startByGoogle(body: AccessTokenDto): Promise<ProfileDto> {
+    const tokenPayload = await this._oauthService.verifyGoogleAccessToken(body.accessToken);
 
     if (!tokenPayload.email_verified) {
       throw new BadRequestException(NOT_VERIFIED_GOOGLE_ACCOUNT);
@@ -83,22 +57,9 @@ export class AuthApiService {
 
     // when account not found, create new one
     if (!account) {
-      let nickname = tokenPayload.name.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
-
-      while (true) {
-        const duplicated = await this._accountService.isNicknameDuplicated({ nickname });
-
-        if (duplicated) {
-          // create nickname until not duplicated
-          nickname = tokenPayload.name.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
-        } else {
-          break;
-        }
-      }
-
       account = await this._accountService.create({
         email: tokenPayload.email,
-        nickname,
+        nickname: await this._accountService.getRandomNickname(),
         oauthProvider: 'google',
         oauthId: tokenPayload.sub,
         avatarUrl: tokenPayload.picture,
@@ -114,6 +75,10 @@ export class AuthApiService {
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
 
+  /**
+   * 카카오 계정으로 시작하기
+   * 기존 계정이 있을 경우 로그인, 없을 경우 새 계정 생성
+   */
   async startByKakao(body: StartByKakaoDto): Promise<ProfileDto> {
     const response = await this._oauthService.getKakaoAccessToken(body.code, body.redirectUri);
 
@@ -123,22 +88,9 @@ export class AuthApiService {
 
     // when account not found, create new one
     if (!account) {
-      let nickname = tokenPayload.nickname.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
-
-      while (true) {
-        const duplicated = await this._accountService.isNicknameDuplicated({ nickname });
-
-        if (duplicated) {
-          // create nickname until not duplicated
-          nickname = tokenPayload.nickname.replace(/\s/gim, '').substring(0, 4) + createSalt().substring(0, 8);
-        } else {
-          break;
-        }
-      }
-
       account = await this._accountService.create({
         email: tokenPayload.email,
-        nickname,
+        nickname: await this._accountService.getRandomNickname(),
         oauthProvider: 'kakao',
         oauthId: tokenPayload.sub,
         avatarUrl: tokenPayload.picture,
@@ -154,96 +106,47 @@ export class AuthApiService {
     return this._accountService.toProfileDto(account, signedAccessToken);
   }
 
-  /**
-   * Auto login process with token.
-   * @param requestUUID
-   * @param accessToken
-   * @throws SIGN_REQUIRED
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async autoLogin(requestUUID: string, accessToken: string): Promise<ProfileDto | void> {
-    if (accessToken) {
-      // Validate and get account.
-      const account = await this._accountService.validateAccessToken(accessToken);
-
-      this._logger.log(`[${requestUUID}] Access token is validated: ${account.id}`);
-
-      // Convert and return.
-      return this._accountService.toProfileDto(account, accessToken);
-    } else {
-      this._logger.error(`[${requestUUID}] Access token isn't provided`);
-
-      throw new UnauthorizedException(SIGN_REQUIRED);
-    }
-  }
-
-  /**
-   * Logout.
-   * @param requestUUID
-   * @param accessToken
-   * @throws SIGN_REQUIRED
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async logout(requestUUID: string, accessToken: string): Promise<void> {
-    try {
-      const account = await this._accountService.validateAccessToken(accessToken);
-
-      this._logger.log(`[${requestUUID}] Access token is validated: ${account.id}`);
-
-      const encryptedAccessToken = encrypt(accessToken, account.salt);
-
-      this._logger.log(`[${requestUUID}] Access token is encrypted`);
-
-      const signedAccount = await this._signedAccountService.getOneByUnique({
-        accountId: account.id,
-        accessToken: encryptedAccessToken,
-      });
-
-      this._logger.log(`[${requestUUID}] Signed account found`);
-
-      await this._signedAccountService.delete({
-        id: signedAccount.id,
-      });
-
-      this._logger.log(`[${requestUUID}] Signed account deleted`);
-    } catch (e) {
-      // Don't throw exception to process logout from the client.
-      this._logger.error(`[${requestUUID}] Error while logging out: ${e.toString()}`, e.stack);
-    }
-  }
-
-  /**
-   * Delete account.
-   * @param requestUUID
-   * @param accessToken
-   * @throws SIGN_REQUIRED
-   * @throws ACCOUNT_NOT_FOUND
-   */
-  async deleteAccount(requestUUID: string, accessToken: string): Promise<DeletedAccountDto> {
+  /** 토근을 이용한 자동 로그인 시도 */
+  async autoLogin(accessToken: string): Promise<ProfileDto | void> {
+    // Validate and get account.
     const account = await this._accountService.validateAccessToken(accessToken);
 
-    this._logger.log(`[${requestUUID}] Access token is validated: ${account.id}`);
+    // Convert and return.
+    return this._accountService.toProfileDto(account, accessToken);
+  }
 
-    const deletedAccount = this._accountService.toDeletedAccountDto(account);
+  /** 로그아웃 처리 */
+  async logout(accessToken: string): Promise<void> {
+    const account = await this._accountService.validateAccessToken(accessToken);
 
-    await this._entityManager
-      .transaction(async (entityManager) => {
-        await this._accountService.delete({
-          id: account.id,
-          entityManager,
-        });
+    const encryptedAccessToken = encrypt(accessToken, account.salt);
 
-        this._logger.log(`[${requestUUID}] Account is deleted: ${deletedAccount.id}`);
+    const signedAccount = await this._signedAccountService.getOneByUnique({
+      accountId: account.id,
+      accessToken: encryptedAccessToken,
+    });
 
-        await this._mailService.sendMail(deletedAccount.email, '계정이 삭제 되었습니다', 'delete-account.html', {
-          nickname: deletedAccount.nickname,
-        });
-      })
-      .catch((e) => {
-        this._logger.error(`[${requestUUID}] Error while deleting account: ${e.toString()}`, e.stack);
+    await this._signedAccountService.delete({
+      id: signedAccount.id,
+    });
+  }
 
-        throw e;
+  /** 계정 삭제 */
+  async deleteAccount(accessToken: string): Promise<DeletedAccountDto> {
+    const account = await this._accountService.validateAccessToken(accessToken);
+
+    const deletedAccount = await this._accountService.toDeletedAccountDto(account);
+
+    await this._entityManager.transaction(async (entityManager) => {
+      await this._accountService.delete({
+        id: account.id,
+        entityManager,
       });
+
+      await this._mailService.sendMail(deletedAccount.email, '계정이 삭제 되었습니다', 'delete-account.html', {
+        nickname: deletedAccount.nickname,
+      });
+    });
 
     return deletedAccount;
   }

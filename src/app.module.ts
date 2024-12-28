@@ -13,7 +13,7 @@ import { SignedAccount } from './entities/signed-account';
 import { AuthApiModule } from './modules/auth-api/auth-api.module';
 import { UploadDetail } from './entities/upload-detail';
 import { FileApiModule } from './modules/file-api/file-api.module';
-import { MeApiModule } from './modules/me-api/me-api.module';
+import { ProfileApiModule } from './modules/profile-api/profile-api.module';
 
 @Module({
   imports: [
@@ -63,7 +63,7 @@ import { MeApiModule } from './modules/me-api/me-api.module';
     }),
     AuthApiModule,
     FileApiModule,
-    MeApiModule,
+    ProfileApiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

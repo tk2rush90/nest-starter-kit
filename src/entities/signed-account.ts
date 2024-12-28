@@ -12,7 +12,7 @@ export class SignedAccount {
   @Generated('uuid')
   @PrimaryColumn({
     name: 'id',
-    type: 'uuid',
+    type: 'bigint',
     primaryKeyConstraintName: 'signed_account_pk',
   })
   id: string;

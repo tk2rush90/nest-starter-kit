@@ -3,6 +3,7 @@ import {
   DeepPartial,
   EntityManager,
   FindOneOptions,
+  FindOptionsWhere,
   ObjectLiteral,
   Repository,
   SelectQueryBuilder,
@@ -11,6 +12,7 @@ import { PagingResultDto } from '../dtos/paging-result-dto';
 import { OrderDirection } from '../types/order-direction';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { camelToSnakeCase } from './string';
+import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
 
 /**
  * Get proper target repository.
@@ -76,6 +78,38 @@ export async function getOneWrapper<E extends ObjectLiteral>(
   }
 
   return entity;
+}
+
+/** 단일 엔티티 존재 여부 체크 및 업데이트 후 업데이트 된 엔티티 리턴 */
+export async function updateOneWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  criteria: FindOptionsWhere<E>,
+  partialEntity: QueryDeepPartialEntity<E>,
+): Promise<E> {
+  // 존재 여부 체크
+  await getOneWrapper(repository, {
+    where: criteria,
+  });
+
+  await repository.update(criteria, partialEntity);
+
+  // 업데이트 된 entity 리턴
+  return await getOneWrapper(repository, {
+    where: criteria,
+  });
+}
+
+/** 단일 엔티티 존재 여부 체크 및 삭제 */
+export async function deleteOneWrapper<E extends ObjectLiteral>(
+  repository: Repository<E>,
+  criteria: FindOptionsWhere<E>,
+): Promise<void> {
+  // 존재 여부 체크
+  await getOneWrapper(repository, {
+    where: criteria,
+  });
+
+  await repository.delete(criteria);
 }
 
 /**

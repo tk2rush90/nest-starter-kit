@@ -1,2 +1,2 @@
 /** Available role name for account */
-export type AccountRole = 'author' | 'manager';
+export type AccountRole = 'user' | 'manager';

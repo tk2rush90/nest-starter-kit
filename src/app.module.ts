@@ -14,6 +14,7 @@ import { AuthApiModule } from './modules/auth-api/auth-api.module';
 import { UploadDetail } from './entities/upload-detail';
 import { FileApiModule } from './modules/file-api/file-api.module';
 import { ProfileApiModule } from './modules/profile-api/profile-api.module';
+import { CustomNamingStrategy } from './utils/typeorm';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ProfileApiModule } from './modules/profile-api/profile-api.module';
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       migrationsRun: true,
       synchronize: !configs.etc.production,
+      namingStrategy: new CustomNamingStrategy(),
     }),
     WinstonModule.forRoot({
       transports: [

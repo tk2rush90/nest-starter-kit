@@ -1,46 +1,31 @@
-import { Column, Entity, Generated, PrimaryColumn } from 'typeorm';
+import { Column, Entity } from 'typeorm';
+import { TextColumn } from '../decorators/text-column';
+import { PrimaryUuidColumn } from '../decorators/primary-uuid-column';
+import { BigIntColumn } from '../decorators/big-int-column';
 
 /** Entity that contains detail of uploaded files */
 @Entity('upload_detail')
 export class UploadDetail {
-  /** Random uuid id */
-  @Generated('uuid')
-  @PrimaryColumn({
-    name: 'id',
-    type: 'uuid',
-    primaryKeyConstraintName: 'upload_detail_pk',
-  })
+  @PrimaryUuidColumn()
   id: string;
 
-  /** File storage path */
-  @Column({
-    name: 'storage_path',
-    type: 'text',
-  })
+  /** 파일 저장 경로 */
+  @TextColumn()
   storagePath: string;
 
-  /** Original filename */
-  @Column({
-    name: 'filename',
-    type: 'text',
-  })
+  /** 파일명 */
+  @TextColumn()
   filename: string;
 
-  /** File size */
-  @Column({
-    name: 'file_size',
-    type: 'bigint',
-  })
+  /** 파일 사이즈 */
+  @BigIntColumn()
   fileSize: string | number;
 
-  /** File mimetype */
-  @Column({
-    name: 'mimetype',
-    type: 'text',
-  })
+  /** Mimetype */
+  @TextColumn()
   mimetype: string;
 
-  /** Created date */
+  /** 생성일 */
   @Column({
     name: 'created_at',
     type: 'timestamp with time zone',

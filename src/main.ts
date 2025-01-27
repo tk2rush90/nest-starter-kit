@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
-import { existsSync, readFileSync } from 'fs';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { configs } from './configs/configs';
 import { AppExceptionFilter } from './filters/app-exception/app-exception.filter';
@@ -12,24 +11,7 @@ import { json, urlencoded } from 'express';
 import { RequestInterceptor } from './interceptors/request/request.interceptor';
 
 async function bootstrap(): Promise<void> {
-  let app: NestExpressApplication;
-
-  // Check whether SSL is available or not.
-  const canRunOnHttps =
-    configs.ssl.cert && configs.ssl.key && existsSync(configs.ssl.cert) && existsSync(configs.ssl.key);
-
-  if (canRunOnHttps) {
-    // Create NestJS app with SSL.
-    app = await NestFactory.create<NestExpressApplication>(AppModule, {
-      httpsOptions: {
-        cert: readFileSync(configs.ssl.cert),
-        key: readFileSync(configs.ssl.key),
-      },
-    });
-  } else {
-    // Create NestJS app without SSL.
-    app = await NestFactory.create<NestExpressApplication>(AppModule);
-  }
+  const app: NestExpressApplication = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Get winston logger
   const logger: Logger = app.get(WINSTON_MODULE_NEST_PROVIDER);

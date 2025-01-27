@@ -1,60 +1,30 @@
-import { Column, Entity, Generated, Index, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { Account } from './account';
+import { EntityCommon } from './entity-common';
+import { BigIntColumn } from '../decorators/big-int-column';
+import { TextColumn } from '../decorators/text-column';
+import { TimestampZColumn } from '../decorators/timestamp-z-column';
 
-/**
- * History of signed account.
- * It manages expiry date of each access token.
- */
+/** 로그인 한 계정 정보 */
 @Entity('signed_account')
 @Index('signed_account_unique_index', ['accountId', 'accessToken'], { unique: true })
-export class SignedAccount {
-  /** Signed account id */
-  @Generated('uuid')
-  @PrimaryColumn({
-    name: 'id',
-    type: 'bigint',
-    primaryKeyConstraintName: 'signed_account_pk',
-  })
-  id: string;
-
-  /** Account id */
-  @Column({
-    name: 'account_id',
-    type: 'bigint',
-  })
+export class SignedAccount extends EntityCommon {
+  @BigIntColumn()
   accountId: string;
 
-  /** Access token encrypted with `salt` of account */
-  @Column({
-    name: 'access_token',
-    type: 'text',
-  })
+  /** `Account.salt`로 암호화 된 액세스 토큰 */
+  @TextColumn()
   accessToken: string;
 
-  /**
-   * Expired date of signed account.
-   * It should be refreshed when reading entity.
-   */
-  @Column({
-    name: 'expired_at',
-    type: 'timestamp with time zone',
-  })
+  /** 로그인 정보 만료일. 토큰 자체의 `expiredIn` 대신 이 값 사용해서 토큰 검증 */
+  @TimestampZColumn()
   expiredAt: Date | string;
 
-  /** Created date */
-  @Column({
-    name: 'created_at',
-    type: 'timestamp with time zone',
-  })
-  createdAt: Date | string;
-
-  /** Relation to account */
   @ManyToOne(() => Account, (entity) => entity.signedAccounts, {
     onDelete: 'CASCADE',
   })
   @JoinColumn({
     name: 'account_id',
-    foreignKeyConstraintName: 'signed_account_account_fk',
   })
   account: Account;
 }

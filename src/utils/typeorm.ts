@@ -1,9 +1,11 @@
 import {
   Brackets,
   DeepPartial,
+  DefaultNamingStrategy,
   EntityManager,
   FindOneOptions,
   FindOptionsWhere,
+  NamingStrategyInterface,
   ObjectLiteral,
   Repository,
   SelectQueryBuilder,
@@ -13,6 +15,7 @@ import { OrderDirection } from '../types/order-direction';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { camelToSnakeCase } from './string';
 import { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
+import { snakeCase } from 'typeorm/util/StringUtils';
 
 /**
  * Get proper target repository.
@@ -372,4 +375,18 @@ export interface CursorPaginateOptions<E extends ObjectLiteral> {
 interface ParametersAndKeys {
   parameters: ObjectLiteral;
   parameterKeys: string[];
+}
+
+export class CustomNamingStrategy extends DefaultNamingStrategy implements NamingStrategyInterface {
+  tableName(targetName: string, userSpecificationName: string): string {
+    return userSpecificationName ? userSpecificationName : snakeCase(targetName);
+  }
+
+  columnName(propertyName: string, customName: string, embeddedPrefixes: string[]): string {
+    if (customName) {
+      return customName;
+    }
+
+    return snakeCase(propertyName);
+  }
 }
